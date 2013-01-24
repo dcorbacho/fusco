@@ -67,7 +67,7 @@
 	  pool = undefined,
 	  pool_options,
 	  socket,
-	  connect_timeout = infinity :: timeout(),
+	  connect_timeout = 'infinity' :: timeout(),
 	  connect_options = [] :: [any()],
 	  %% next fields are specific to particular requests
 	  request :: iolist() | undefined,
@@ -84,7 +84,7 @@
 	  %% the wire at that point or in case of chunked one chunk
 	  attempts = 0 :: integer(),
 	  download_info :: {term(), term()},
-	  body_length = undefined :: non_neg_integer() | undefined | chunked | infinity,
+	  body_length = undefined :: {'fixed_length', non_neg_integer()} | 'undefined' | 'chunked' | 'infinite',
 	  proxy :: undefined | #lhttpc_url{},
 	  proxy_ssl_options = [] :: [any()],
 	  proxy_setup = false :: boolean()
@@ -521,6 +521,8 @@ read_response(State, Vsn, {StatusCode, _} = Status, Hdrs) ->
 		noreply ->
 		    %when partial_download is used. We do not close the socket.
 		    {noreply, NewState#client_state{socket = Socket}};
+		{error, Reason} ->
+		    {reply, {error, Reason}, NewState#client_state{socket = undefined}};
 		_ ->
 		    NewHdrs = element(2, Reply),
 		    ReqHdrs = State#client_state.request_headers,
@@ -552,18 +554,25 @@ read_response(State, Vsn, {StatusCode, _} = Status, Hdrs) ->
 %%------------------------------------------------------------------------------
 -spec handle_response_body(#client_state{}, {integer(), integer()},
                 http_status(), headers()) -> {http_status(), headers(), body()} |
-                                             {http_status(), headers()}.
+                                             {http_status(), headers()} |
+					     {'noreply', any()} |
+					     {{'error', any()}, any()}.
 handle_response_body(#client_state{partial_download = false} = State, Vsn,
         Status, Hdrs) ->
 %when {partial_download, PartialDownloadOptions} option is NOT used.
     Socket = State#client_state.socket,
     Ssl = State#client_state.ssl,
     Method = State#client_state.method,
-    {Body, NewHdrs} = case has_body(Method, element(1, Status), Hdrs) of
+    Reply = case has_body(Method, element(1, Status), Hdrs) of
                           true  -> read_body(Vsn, Hdrs, Ssl, Socket, body_type(Hdrs));
                           false -> {<<>>, Hdrs}
-                      end,
-    {{Status, NewHdrs, Body}, State};
+	    end,
+    case Reply of
+	{error, Reason} ->
+	    {{error, Reason}, State};
+	{Body, NewHdrs} ->
+	    {{Status, NewHdrs, Body}, State}
+    end;
 handle_response_body(#client_state{partial_download = true} = State, Vsn,
         Status, Hdrs) ->
 %when {partial_download, PartialDownloadOptions} option is used.
@@ -703,7 +712,8 @@ read_length(Hdrs, Ssl, Socket, Length) ->
         {ok, Data} ->
             {Data, Hdrs};
         {error, Reason} ->
-            erlang:error(Reason)
+	    lhttpc_sock:close(Socket, Ssl),
+	    {error, Reason}
     end.
 
 %%------------------------------------------------------------------------------

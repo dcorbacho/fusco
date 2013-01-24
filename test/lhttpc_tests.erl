@@ -1,7 +1,7 @@
 %%% ----------------------------------------------------------------------------
 %%% Copyright (c) 2009, Erlang Training and Consulting Ltd.
 %%% All rights reserved.
-%%% 
+%%%
 %%% Redistribution and use in source and binary forms, with or without
 %%% modification, are permitted provided that the following conditions are met:
 %%%    * Redistributions of source code must retain the above copyright
@@ -12,7 +12,7 @@
 %%%    * Neither the name of Erlang Training and Consulting Ltd. nor the
 %%%      names of its contributors may be used to endorse or promote products
 %%%      derived from this software without specific prior written permission.
-%%% 
+%%%
 %%% THIS SOFTWARE IS PROVIDED BY Erlang Training and Consulting Ltd. ''AS IS''
 %%% AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
 %%% IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
@@ -82,7 +82,7 @@ tcp_test_() ->
                 ?_test(persistent_connection()),
                 ?_test(request_timeout()),
                 ?_test(connection_timeout()),
-              %  ?_test(suspended_manager()),
+                ?_test(suspended_manager()),
               %  ?_test(chunked_encoding()),
                 ?_test(partial_upload_identity()),
                 ?_test(partial_upload_identity_iolist()),
@@ -97,11 +97,10 @@ tcp_test_() ->
                 ?_test(partial_download_chunked()),
                 ?_test(partial_download_chunked_infinite_part()),
                 ?_test(partial_download_smallish_chunks()),
-                ?_test(partial_download_slow_chunks())
-              %  ?_test(close_connection()),
-              %  ?_test(message_queue()),
-              %  ?_test(trailing_space_header()),
-              %  ?_test(connection_count()) % just check that it's 0 (last)
+                ?_test(partial_download_slow_chunks()),
+                ?_test(close_connection()),
+                ?_test(trailing_space_header()),
+                ?_test(connection_count()) % just check that it's 0 (last)
             ]}
     }.
 
@@ -122,9 +121,6 @@ other_test_() ->
     ].
 
 %%% Tests
-
-message_queue() ->
-    receive X -> erlang:error({unexpected_message, X}) after 0 -> ok end.
 
 simple_get() ->
     simple(get),
@@ -411,17 +407,16 @@ connection_timeout() ->
 suspended_manager() ->
     Port = start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
     URL = url(Port, "/persistent"),
-    lhttpc:add_pool(lhttpc_manager),
-    {ok, FirstResponse} = lhttpc:request(URL, get, [], [], 50, [{pool, lhttpc_manager}]),
+    {ok, FirstResponse} = lhttpc:request(URL, get, [], [], 50, [{pool_options, [{pool_ensure, true}, {pool, lhttpc_manager}]}]),
     ?assertEqual({200, "OK"}, status(FirstResponse)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(FirstResponse)),
     Pid = whereis(lhttpc_manager),
     true = erlang:suspend_process(Pid),
-    ?assertEqual({error, timeout}, lhttpc:request(URL, get, [], [], 50, [{pool, lhttpc_manager}])),
+    ?assertEqual({error, connection_timeout}, lhttpc:request(URL, get, [], [], 50, [{pool_options, [{pool_ensure, true}, {pool, lhttpc_manager}]}])),
     true = erlang:resume_process(Pid),
     ?assertEqual(1,
         lhttpc_manager:connection_count(lhttpc_manager, {"localhost", Port, false})),
-    {ok, SecondResponse} = lhttpc:request(URL, get, [], [], 50, [{pool, lhttpc_manager}]),
+    {ok, SecondResponse} = lhttpc:request(URL, get, [], [], 50, [{pool_options, [{pool_ensure, true}, {pool, lhttpc_manager}]}]),
     ?assertEqual({200, "OK"}, status(SecondResponse)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(SecondResponse)).
 
@@ -684,7 +679,7 @@ partial_download_slow_chunks() ->
 close_connection() ->
     Port = start(gen_tcp, [fun webserver_utils:close_connection/5]),
     URL = url(Port, "/close"),
-    ?assertEqual({error, connection_closed}, lhttpc:request(URL, "GET", [],
+    ?assertEqual({error, closed}, lhttpc:request(URL, "GET", [],
             1000)).
 
 ssl_get() ->

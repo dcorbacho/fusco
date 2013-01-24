@@ -205,12 +205,12 @@ start_link(Options0) ->
 %% destination and returns it if it exists, 'undefined' otherwise.
 %% @end
 %%------------------------------------------------------------------------------
--spec ensure_call(pool_id(), pid(), host(), port_num(), boolean(), options()) ->
+-spec ensure_call(pool_id(), pid(), host(), port_num(), boolean(), pool_options()) ->
                         {ok, socket()} | {ok, 'no_socket'} | {error, term()}.
 ensure_call(Pool, Pid, Host, Port, Ssl, Options) ->
     SocketRequest = {socket, Pid, Host, Port, Ssl},
     try
-	gen_server:call(Pool, SocketRequest, infinity)
+	gen_server:call(Pool, SocketRequest, 100)
     catch
         exit:{noproc, _Reason} ->
             case proplists:get_value(pool_ensure, Options, false) of
