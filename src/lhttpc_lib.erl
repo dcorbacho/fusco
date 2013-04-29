@@ -40,12 +40,14 @@
          maybe_atom_to_list/1,
          format_hdrs/1,
          dec/1,
-	 get_cookies/1,
-	 update_cookies/2
-        ]).
+         get_cookies/1,
+         update_cookies/2,
+         to_lower/1]).
 
 -include("lhttpc_types.hrl").
 -include("lhttpc.hrl").
+
+-define(HTTP_LINE_END, "\r\n").
 
 %%==============================================================================
 %% Exported functions
@@ -89,11 +91,11 @@ header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) when is_atom(ThisHdr) ->
 header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) when is_binary(ThisHdr) ->
     header_value(Hdr, [{binary_to_list(ThisHdr), Value}| Hdrs], Default);
 header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) ->
-    case string:equal(string:to_lower(ThisHdr), Hdr) of
+    case string:equal(lhttpc_lib:to_lower(ThisHdr), Hdr) of
         true  -> case is_list(Value) of
-                     true -> string:strip(Value);
-                     false -> Value
-                 end;
+                true -> string:strip(Value);
+                false -> Value
+            end;
         false ->
             header_value(Hdr, Hdrs, Default)
     end;
@@ -128,17 +130,12 @@ parse_url(URL) ->
     {User, Passwd, HostPortPath} = split_credentials(CredsHostPortPath),
     {Host, PortPath} = split_host(HostPortPath, []),
     {Port, Path} = split_port(Scheme, PortPath, []),
-    #lhttpc_url{
-        host = string:to_lower(Host),
-        port = Port,
-        path = Path,
-        user = User,
-        password = Passwd,
-        is_ssl = (Scheme =:= https)
-    }.
+    #lhttpc_url{host = lhttpc_lib:to_lower(Host), port = Port, path = Path,
+                user = User, password = Passwd, is_ssl = (Scheme =:= https)}.
 
 %%------------------------------------------------------------------------------
-%% @spec (Path, Method, Headers, Host, Port, Body, PartialUpload) -> Request
+%% @spec (Path, Method, Headers, Host, Port, Body, PartialUpload, Cookies) ->
+%%    Request
 %% Path = iolist()
 %% Method = atom() | string()
 %% Headers = [{atom() | string(), string()}]
@@ -146,22 +143,17 @@ parse_url(URL) ->
 %% Port = integer()
 %% Body = iolist()
 %% PartialUpload = true | false
+%% Cookies = [#lhttpc_cookie{}]
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec format_request(iolist(), method(), headers(), string(),
-    integer(), iolist(), boolean(), {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
+-spec format_request(iolist(), method(), headers(), string(), integer(), iolist(),
+                     boolean(), {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
 format_request(Path, Method, Hdrs, Host, Port, Body, PartialUpload, Cookies) ->
     AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Port, Body, PartialUpload, Cookies),
     IsChunked = is_chunked(AllHdrs),
-    {
-        IsChunked,
-        [
-            Method, " ", Path, " HTTP/1.1\r\n",
-            format_hdrs(AllHdrs),
-            format_body(Body, IsChunked)
-        ]
-    }.
+    {IsChunked, [Method, " ", Path, " HTTP/1.1", ?HTTP_LINE_END, format_hdrs(AllHdrs),
+     format_body(Body, IsChunked)]}.
 
 %%------------------------------------------------------------------------------
 %% @spec normalize_method(AtomOrString) -> Method
@@ -183,8 +175,10 @@ normalize_method(Method) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec dec(timeout()) -> timeout().
-dec(Num) when is_integer(Num) -> Num - 1;
-dec(Else)                     -> Else.
+dec(Num) when is_integer(Num) ->
+    Num - 1;
+dec(Else) ->
+    Else.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -214,15 +208,23 @@ get_cookies(Hdrs) ->
 update_cookies(RespHeaders, StateCookies) ->
     ReceivedCookies = lhttpc_lib:get_cookies(RespHeaders),
     %% substitute the cookies with the same name, add the others.
-    Substituted =
-    	lists:foldl(fun(X, Acc) ->
-    			    lists:keystore(X#lhttpc_cookie.name,
-					   #lhttpc_cookie.name, Acc, X)
-    		    end, StateCookies, ReceivedCookies),
+    Substituted = lists:foldl(fun(X, Acc) ->
+                                lists:keystore(X#lhttpc_cookie.name,
+                                                #lhttpc_cookie.name, Acc, X)
+                              end, StateCookies, ReceivedCookies),
     %% delete the cookies whose value is set to "deleted"
-    NewCookies = [ X || X <- Substituted, X#lhttpc_cookie.value =/= "deleted"],
+    NewCookies = [ X || X <- Substituted, X#lhttpc_cookie.value /= "deleted"],
     %% Delete the cookies that are expired (check max-age and expire fields).
     delete_expired_cookies(NewCookies).
+
+
+%%------------------------------------------------------------------------------
+%% @doc Converts characters in a string ro lower case.
+%% @end
+%%------------------------------------------------------------------------------
+-spec to_lower(string()) -> string().
+to_lower(String) ->
+    [char_to_lower(X) || X <- String].
 
 %%==============================================================================
 %% Internal functions
@@ -234,12 +236,11 @@ update_cookies(RespHeaders, StateCookies) ->
 -spec delete_expired_cookies([#lhttpc_cookie{}]) -> [#lhttpc_cookie{}].
 delete_expired_cookies(Cookies) ->
     [ X || X <- Cookies,
-	   X#lhttpc_cookie.max_age =:= undefined orelse
-	       timer:now_diff(os:timestamp(), X#lhttpc_cookie.timestamp)
-	       =< X#lhttpc_cookie.max_age,
-	   X#lhttpc_cookie.expires =:= never orelse
-	       calendar:datetime_to_gregorian_seconds(calendar:universal_time())
-	       =< calendar:datetime_to_gregorian_seconds(X#lhttpc_cookie.expires)].
+           X#lhttpc_cookie.max_age == undefined orelse
+           timer:now_diff(os:timestamp(), X#lhttpc_cookie.timestamp)
+           =< X#lhttpc_cookie.max_age, X#lhttpc_cookie.expires == never orelse
+           calendar:datetime_to_gregorian_seconds(calendar:universal_time())
+           =< calendar:datetime_to_gregorian_seconds(X#lhttpc_cookie.expires)].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -248,17 +249,17 @@ create_cookie_record(Cookie) ->
     [NameValue | Rest] = string:tokens(Cookie, ";"),
     Tokens = string:tokens(NameValue, "="),
     {Atr, AtrValue} = case length(Tokens) of
-			2 ->
-			    [Name | [Value]] = Tokens,
-			    {Name, Value};
-			_ ->
-			    [Name | _] = Tokens,
-			    Length = length(Name) + 2,
-			    Value = string:substr(NameValue, Length),
-			    {Name, Value}
-		    end,
+        2 ->
+            [Name | [Value]] = Tokens,
+            {Name, Value};
+        _ ->
+            [Name | _] = Tokens,
+            Length = length(Name) + 2,
+            Value = string:substr(NameValue, Length),
+            {Name, Value}
+    end,
     CookieRec = #lhttpc_cookie{name = Atr,
-			       value = AtrValue},
+                               value = AtrValue},
     other_cookie_elements(Rest, CookieRec).
 
 %%------------------------------------------------------------------------------
@@ -290,13 +291,13 @@ other_cookie_elements([" Max-Age" ++ Value | Rest], Cookie) ->
     {Integer, _Rest} = string:to_integer(FinalValue),
     MaxAge = Integer * 1000000, %we need it in microseconds
     other_cookie_elements(Rest, Cookie#lhttpc_cookie{max_age = MaxAge,
-						    timestamp = os:timestamp()});
+                                                     timestamp = os:timestamp()});
 other_cookie_elements([" max-age" ++ Value | Rest], Cookie) ->
     "=" ++ FinalValue = Value,
     {Integer, _Rest} = string:to_integer(FinalValue),
     MaxAge = Integer * 1000000, %we need it in microseconds
     other_cookie_elements(Rest, Cookie#lhttpc_cookie{max_age = MaxAge,
-						    timestamp = os:timestamp()});
+                                                     timestamp = os:timestamp()});
 % for the moment we ignore the other attributes.
 other_cookie_elements([_Element | Rest], Cookie) ->
     other_cookie_elements(Rest, Cookie).
@@ -308,11 +309,9 @@ other_cookie_elements([_Element | Rest], Cookie) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec expires_to_datetime(string()) ->
-				 {{integer(), integer(), integer()},
-				  {integer(),integer(),integer()}}.
+    {{integer(), integer(), integer()},{integer(),integer(),integer()}}.
 expires_to_datetime(ExpireDate) ->
-    [_Expires, Day, Month, Year, Hour, Min, Sec, _GMT]
-	= string:tokens(ExpireDate, ", -:"),
+    [_Expires, Day, Month, Year, Hour, Min, Sec, _GMT] = string:tokens(ExpireDate, ", -:"),
     {{list_to_integer(Year), month_to_integer(Month), list_to_integer(Day)},
      {list_to_integer(Hour), list_to_integer(Min), list_to_integer(Sec)}}.
 
@@ -438,15 +437,14 @@ normalize_headers(Headers) ->
 %%------------------------------------------------------------------------------
 -spec normalize_headers(raw_headers(), headers()) -> headers().
 normalize_headers([{Header, Value} | T], Acc) when is_list(Header) ->
-    NormalizedHeader = try list_to_existing_atom(Header)
-                      catch
-                           error:badarg -> Header
-                       end,
-    NewAcc = [{NormalizedHeader, Value} | Acc],
-    normalize_headers(T, NewAcc);
+    NormalizedHeader = try
+        list_to_existing_atom(Header)
+    catch
+        error:badarg -> Header
+    end,
+    normalize_headers(T, [{NormalizedHeader, Value} | Acc]);
 normalize_headers([{Header, Value} | T], Acc) ->
-    NewAcc = [{Header, Value} | Acc],
-    normalize_headers(T, NewAcc);
+    normalize_headers(T, [{Header, Value} | Acc]);
 normalize_headers([], Acc) ->
     Acc.
 
@@ -455,12 +453,13 @@ normalize_headers([], Acc) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
-format_hdrs([{Hdr, Value} | T], Acc) ->
-    NewAcc =
-        [maybe_atom_to_list(Hdr), ": ", maybe_atom_to_list(Value), "\r\n" | Acc],
+format_hdrs([{Header, Value} | T], Acc) ->
+    Header2 = maybe_atom_to_list(Header),
+    Value2 = maybe_atom_to_list(Value),
+    NewAcc = [Header2, ": ", Value2, ?HTTP_LINE_END | Acc],
     format_hdrs(T, NewAcc);
 format_hdrs([], Acc) ->
-    [Acc, "\r\n"].
+    [Acc, ?HTTP_LINE_END].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -475,10 +474,8 @@ format_body(Body, true) ->
         0 ->
             <<>>;
         Size ->
-            [
-                erlang:integer_to_list(Size, 16), <<"\r\n">>,
-                Body, <<"\r\n">>
-            ]
+            [erlang:integer_to_list(Size, 16), <<?HTTP_LINE_END>>,
+             Body, <<?HTTP_LINE_END>>]
     end.
 
 %%------------------------------------------------------------------------------
@@ -491,23 +488,23 @@ format_body(Body, true) ->
 add_mandatory_hdrs(Path, Method, Hdrs, Host, Port, Body, PartialUpload, {UseCookies, Cookies}) ->
     ContentHdrs = add_content_headers(Method, Hdrs, Body, PartialUpload),
     case UseCookies of
-	true ->
-	    % only include cookies if the cookie path is a prefix of the request path
-	    % see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
-	    IncludeCookies = 
-		lists:filter(fun(#lhttpc_cookie{path = undefined}) ->
-				     true;
-				(X) ->
-				     IsPrefix = string:str(Path, X#lhttpc_cookie.path),
-				     if (IsPrefix =/= 1) ->
-					     false;
-					true ->
-					     true
-				     end
-			     end, Cookies),
-	    FinalHdrs = add_cookie_headers(ContentHdrs, IncludeCookies);
-	_ ->
-	    FinalHdrs = ContentHdrs
+        true ->
+            % only include cookies if the cookie path is a prefix of the request path
+            % see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
+            IncludeCookies = lists:filter(
+                                fun(#lhttpc_cookie{path = undefined}) ->
+                                       true;
+                                   (X) ->
+                                       IsPrefix = string:str(Path, X#lhttpc_cookie.path),
+                                       if (IsPrefix =/= 1) ->
+                                           false;
+                                       true ->
+                                           true
+                                      end
+                               end, Cookies),
+            FinalHdrs = add_cookie_headers(ContentHdrs, IncludeCookies);
+        _ ->
+            FinalHdrs = ContentHdrs
     end,
     add_host(FinalHdrs, Host, Port).
 
@@ -562,13 +559,13 @@ add_content_headers(Hdrs, Body, false) ->
     end;
 add_content_headers(Hdrs, _Body, true) ->
     case {header_value("content-length", Hdrs),
-         header_value("transfer-encoding", Hdrs)} of
+          header_value("transfer-encoding", Hdrs)} of
         {undefined, undefined} ->
             [{"Transfer-Encoding", "chunked"} | Hdrs];
         {undefined, TransferEncoding} ->
-            case string:to_lower(TransferEncoding) of
-            "chunked" -> Hdrs;
-            _ -> erlang:error({error, unsupported_transfer_encoding})
+            case lhttpc_lib:to_lower(TransferEncoding) of
+                "chunked" -> Hdrs;
+                _ -> erlang:error({error, unsupported_transfer_encoding})
             end;
         {_Length, undefined} ->
             Hdrs;
@@ -597,8 +594,8 @@ add_host(Hdrs, Host, Port) ->
 %%------------------------------------------------------------------------------
 -spec is_chunked(headers()) -> boolean().
 is_chunked(Hdrs) ->
-    TransferEncoding = string:to_lower(
-        header_value("transfer-encoding", Hdrs, "undefined")),
+    TransferEncoding = lhttpc_lib:to_lower(
+            header_value("transfer-encoding", Hdrs, "undefined")),
     case TransferEncoding of
         "chunked" -> true;
         _ -> false
@@ -630,3 +627,36 @@ maybe_ipv6_enclose(Host) ->
         _ ->
             Host
     end.
+
+%%------------------------------------------------------------------------------
+%% @private
+%% @doc
+%% @end
+%%------------------------------------------------------------------------------
+char_to_lower($A) -> $a;
+char_to_lower($B) -> $b;
+char_to_lower($C) -> $c;
+char_to_lower($D) -> $d;
+char_to_lower($E) -> $e;
+char_to_lower($F) -> $f;
+char_to_lower($G) -> $g;
+char_to_lower($H) -> $h;
+char_to_lower($I) -> $i;
+char_to_lower($J) -> $j;
+char_to_lower($K) -> $k;
+char_to_lower($L) -> $l;
+char_to_lower($M) -> $m;
+char_to_lower($N) -> $n;
+char_to_lower($O) -> $o;
+char_to_lower($P) -> $p;
+char_to_lower($Q) -> $q;
+char_to_lower($R) -> $r;
+char_to_lower($S) -> $s;
+char_to_lower($T) -> $t;
+char_to_lower($U) -> $u;
+char_to_lower($V) -> $v;
+char_to_lower($W) -> $w;
+char_to_lower($X) -> $x;
+char_to_lower($Y) -> $y;
+char_to_lower($Z) -> $z;
+char_to_lower(Ch) -> Ch.
