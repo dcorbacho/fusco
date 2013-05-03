@@ -40,7 +40,7 @@
 
 -type headers() :: [{header(), iodata()}].
 
--type method() :: string() | atom().
+-type method() :: string().
 
 -type pos_timeout() ::  pos_integer() | 'infinity'.
 

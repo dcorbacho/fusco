@@ -36,7 +36,6 @@
 -export([parse_url/1,
          format_request/8,
          header_value/2, header_value/3,
-         normalize_method/1,
          maybe_atom_to_list/1,
          format_hdrs/1,
          dec/1,
@@ -91,7 +90,7 @@ header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) when is_atom(ThisHdr) ->
 header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) when is_binary(ThisHdr) ->
     header_value(Hdr, [{binary_to_list(ThisHdr), Value}| Hdrs], Default);
 header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) ->
-    case string:equal(lhttpc_lib:to_lower(ThisHdr), Hdr) of
+    case lhttpc_lib:to_lower(ThisHdr) == Hdr of
         true  -> case is_list(Value) of
                 true -> string:strip(Value);
                 false -> Value
@@ -156,21 +155,6 @@ format_request(Path, Method, Hdrs, Host, Port, Body, PartialUpload, Cookies) ->
      format_body(Body, IsChunked)]}.
 
 %%------------------------------------------------------------------------------
-%% @spec normalize_method(AtomOrString) -> Method
-%%   AtomOrString = atom() | string()
-%%   Method = string()
-%% @doc
-%% Turns the method in to a string suitable for inclusion in a HTTP request
-%% line.
-%% @end
-%%------------------------------------------------------------------------------
--spec normalize_method(method()) -> string().
-normalize_method(Method) when is_atom(Method) ->
-    string:to_upper(atom_to_list(Method));
-normalize_method(Method) ->
-    Method.
-
-%%------------------------------------------------------------------------------
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
@@ -196,8 +180,7 @@ format_hdrs(Headers) ->
 %%------------------------------------------------------------------------------
 -spec get_cookies(headers()) -> [#lhttpc_cookie{}].
 get_cookies(Hdrs) ->
-    Values = [Value || {"Set-Cookie", Value} <- Hdrs],
-    lists:map(fun create_cookie_record/1, Values).
+    [create_cookie_record(Value) || {"Set-Cookie", Value} <- Hdrs].
 
 %%------------------------------------------------------------------------------
 %% @private

@@ -116,7 +116,7 @@ stop(Client) ->
 %%------------------------------------------------------------------------------
 %% @spec (Client, Path, Method, Hdrs, RequestBody, Options, Timeout) -> ok
 %%    From = pid()
-%%    Method = atom() | string()
+%%    Method = string()
 %%    Hdrs = [Header]
 %%    Header = {string() | atom(), string()}
 %%    Body = iolist()
@@ -173,7 +173,6 @@ handle_call({request, PathOrUrl, Method, Hdrs, Body, Options}, From,
     PartialUpload = proplists:get_value(partial_upload, Options, false),
     PartialDownload = proplists:is_defined(partial_download, Options),
     PartialDownloadOptions = proplists:get_value(partial_download, Options, []),
-    NormalizedMethod = lhttpc_lib:normalize_method(Method),
     Proxy = case proplists:get_value(proxy, Options) of
         undefined ->
             undefined;
@@ -189,12 +188,12 @@ handle_call({request, PathOrUrl, Method, Hdrs, Body, Options}, From,
     case {Host, Port} =:= {ClientHost, ClientPort} of
         true ->
             {ChunkedUpload, Request} =
-                lhttpc_lib:format_request(FinalPath, NormalizedMethod,
+                lhttpc_lib:format_request(FinalPath, Method,
                     FinalHeaders, Host, Port, Body, PartialUpload,
                 {UseCookies, Cookies}),
             NewState =
                     State#client_state{
-                        method = NormalizedMethod,
+                        method = Method,
                         request = Request,
                         requester = From,
                         request_headers = Hdrs,
