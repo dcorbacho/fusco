@@ -171,8 +171,8 @@ disconnect_client(Client) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec request_client(pid(), string(), method(), headers(), pos_timeout()) -> result().
-request_client(Client, PathOrUrl, Method, Hdrs, Timeout) ->
-    request_client(Client, PathOrUrl, Method, Hdrs, [], Timeout, []).
+request_client(Client, Path, Method, Hdrs, Timeout) ->
+    request_client(Client, Path, Method, Hdrs, [], Timeout, []).
 
 %%------------------------------------------------------------------------------
 %% @doc Makes a request using a client already connected.
@@ -180,21 +180,22 @@ request_client(Client, PathOrUrl, Method, Hdrs, Timeout) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec request_client(pid(), string(), method(), headers(), iodata(), pos_timeout()) -> result().
-request_client(Client, PathOrUrl, Method, Hdrs, Body, Timeout) ->
-    request_client(Client, PathOrUrl, Method, Hdrs, Body, Timeout, []).
+request_client(Client, Path, Method, Hdrs, Body, Timeout) ->
+    request_client(Client, Path, Method, Hdrs, Body, Timeout, []).
 
 %%------------------------------------------------------------------------------
 %% @doc Makes a request using a client already connected.
 %% It can receive either a URL or a path. It allows to add the body and specify
 %% options, which are the same than for request (without client) functions.
+%% Authorization must be part of the headers
 %% @end
 %%------------------------------------------------------------------------------
 -spec request_client(pid(), string(), method(), headers(), iodata(),
                      pos_timeout(), options()) -> result().
-request_client(Client, PathOrUrl, Method, Hdrs, Body, Timeout, Options) ->
+request_client(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
     verify_options(Options),
     try
-        Reply = lhttpc_client:request(Client, PathOrUrl, Method, Hdrs, Body, Options, Timeout),
+        Reply = lhttpc_client:request(Client, Path, Method, Hdrs, Body, Options, Timeout),
         Reply
     catch
         exit:{timeout, _} ->

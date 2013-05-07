@@ -166,58 +166,50 @@ init({Destination, Options}) ->
 %% socket used is new, it also makes the pool gen_server its controlling process.
 %% @end
 %%------------------------------------------------------------------------------
-handle_call({request, PathOrUrl, Method, Hdrs, Body, Options}, From,
-            State = #client_state{ssl = Ssl, host = ClientHost, port = ClientPort,
+handle_call({request, Path, Method, Hdrs, Body, Options}, From,
+            State = #client_state{ssl = Ssl, host = Host, port = Port,
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
     PartialUpload = proplists:get_value(partial_upload, Options, false),
     PartialDownload = proplists:is_defined(partial_download, Options),
     PartialDownloadOptions = proplists:get_value(partial_download, Options, []),
     Proxy = case proplists:get_value(proxy, Options) of
-        undefined ->
-            undefined;
-        ProxyUrl when is_list(ProxyUrl), not Ssl ->
-            % The point of HTTP CONNECT proxying is to use TLS tunneled in
-            % a plain HTTP/1.1 connection to the proxy (RFC2817).
-            throw(origin_server_not_https);
-        ProxyUrl when is_list(ProxyUrl) ->
-            lhttpc_lib:parse_url(ProxyUrl)
-    end,
-    {FinalPath, FinalHeaders, Host, Port} =
-        url_extract(PathOrUrl, Hdrs, ClientHost, ClientPort),
-    case {Host, Port} =:= {ClientHost, ClientPort} of
-        true ->
-            {ChunkedUpload, Request} =
-                lhttpc_lib:format_request(FinalPath, Method,
-                    FinalHeaders, Host, Port, Body, PartialUpload,
-                {UseCookies, Cookies}),
-            NewState =
-                    State#client_state{
-                        method = Method,
-                        request = Request,
-                        requester = From,
-                        request_headers = Hdrs,
-                        attempts = proplists:get_value(send_retry, Options, 1),
-                        partial_upload = PartialUpload,
-                        chunked_upload = ChunkedUpload,
-                        partial_download = PartialDownload,
-                        download_window =
-                            proplists:get_value(window_size, PartialDownloadOptions,
-                                                infinity),
-                        download_proc =
-                            proplists:get_value(recv_proc, PartialDownloadOptions,
-                                                infinity),
-                        part_size =
-                            proplists:get_value(part_size, PartialDownloadOptions,
-                                                infinity),
-                        proxy = Proxy,
-                        proxy_setup = (Socket /= undefined),
-                        proxy_ssl_options =
-                            proplists:get_value(proxy_ssl_options, Options, [])},
-            send_request(NewState);
-        _ ->
-            {reply, {error, host_or_port_different_to_connected}, State}
-    end;
+		undefined ->
+		    undefined;
+		ProxyUrl when is_list(ProxyUrl), not Ssl ->
+						% The point of HTTP CONNECT proxying is to use TLS tunneled in
+						% a plain HTTP/1.1 connection to the proxy (RFC2817).
+		    throw(origin_server_not_https);
+		ProxyUrl when is_list(ProxyUrl) ->
+		    lhttpc_lib:parse_url(ProxyUrl)
+	    end,
+    {ChunkedUpload, Request} =
+	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Port, Body, PartialUpload,
+				  {UseCookies, Cookies}),
+    NewState =
+	State#client_state{
+	  method = Method,
+	  request = Request,
+	  requester = From,
+	  request_headers = Hdrs,
+	  attempts = proplists:get_value(send_retry, Options, 1),
+	  partial_upload = PartialUpload,
+	  chunked_upload = ChunkedUpload,
+	  partial_download = PartialDownload,
+	  download_window =
+	      proplists:get_value(window_size, PartialDownloadOptions,
+				  infinity),
+	  download_proc =
+	      proplists:get_value(recv_proc, PartialDownloadOptions,
+				  infinity),
+	  part_size =
+	      proplists:get_value(part_size, PartialDownloadOptions,
+				  infinity),
+	  proxy = Proxy,
+	  proxy_setup = (Socket /= undefined),
+	  proxy_ssl_options =
+	      proplists:get_value(proxy_ssl_options, Options, [])},
+    send_request(NewState);
 handle_call(_Msg, _From, #client_state{request = undefined} = State) ->
     {reply, {error, no_pending_request}, State};
 handle_call({send_body_part, _}, _From, State = #client_state{partial_upload = false}) ->
@@ -246,7 +238,7 @@ handle_call({send_body_part, Data}, From, State) ->
     gen_server:reply(From, ok),
     {_Reply, NewState} = send_body_part(State, Data),
     {noreply, NewState};
-%We send the parts to the specified Pid.
+						%We send the parts to the specified Pid.
 handle_call(get_body_part, From, State) ->
     gen_server:reply(From, ok),
     {noreply, read_partial_body(State)}.
@@ -323,26 +315,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-url_extract(PathOrUrl, Hdrs, ClientHost, ClientPort) ->
-    try #lhttpc_url{host = UrlHost, port = UrlPort, path = Path, is_ssl = _Ssl,
-                    user = User, password = Passwd} = lhttpc_lib:parse_url(PathOrUrl),
-        Headers = case User of
-            [] ->
-                Hdrs;
-            _ ->
-                Auth = "Basic " ++ binary_to_list(base64:encode(User ++ ":" ++ Passwd)),
-                lists:keystore("Authorization", 1, Hdrs, {"Authorization", Auth})
-        end,
-        {Path, Headers, UrlHost, UrlPort}
-    catch %if parse_url crashes we assume it is a path.
-        _:_ ->
-            {PathOrUrl, Hdrs, ClientHost, ClientPort}
-    end.
-
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
