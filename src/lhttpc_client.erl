@@ -134,11 +134,11 @@ request(Client, Path, Method, Hdrs, Body, Options, Timeout) ->
 %%% gen_server callbacks
 %%%===================================================================
 init({Destination, Options}) ->
-    PoolOptions = proplists:get_value(pool_options, Options, []),
-    Pool = proplists:get_value(pool, PoolOptions),
-    ConnectTimeout = proplists:get_value(connect_timeout, Options, infinity),
-    ConnectOptions = proplists:get_value(connect_options, Options, []),
-    UseCookies = proplists:get_value(use_cookies, Options, false),
+    PoolOptions = lhttpc_lib:get_value(pool_options, Options, []),
+    Pool = lhttpc_lib:get_value(pool, PoolOptions),
+    ConnectTimeout = lhttpc_lib:get_value(connect_timeout, Options, infinity),
+    ConnectOptions = lhttpc_lib:get_value(connect_options, Options, []),
+    UseCookies = lhttpc_lib:get_value(use_cookies, Options, false),
     {Host, Port, Ssl} = case Destination of
         {H, P, S} ->
             {H, P, S};
@@ -170,17 +170,17 @@ handle_call({request, Path, Method, Hdrs, Body, Options}, From,
             State = #client_state{ssl = Ssl, host = Host, port = Port,
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
-    PartialUpload = proplists:get_value(partial_upload, Options, false),
+    PartialUpload = lhttpc_lib:get_value(partial_upload, Options, false),
     PartialDownload = proplists:is_defined(partial_download, Options),
-    PartialDownloadOptions = proplists:get_value(partial_download, Options, []),
-    Proxy = case proplists:get_value(proxy, Options) of
-		undefined ->
+    PartialDownloadOptions = lhttpc_lib:get_value(partial_download, Options, []),
+    Proxy = case lists:keyfind(proxy, 1, Options) of
+		false ->
 		    undefined;
-		ProxyUrl when is_list(ProxyUrl), not Ssl ->
+		{proxy, ProxyUrl} when is_list(ProxyUrl), not Ssl ->
 						% The point of HTTP CONNECT proxying is to use TLS tunneled in
 						% a plain HTTP/1.1 connection to the proxy (RFC2817).
 		    throw(origin_server_not_https);
-		ProxyUrl when is_list(ProxyUrl) ->
+		{proxy, ProxyUrl} when is_list(ProxyUrl) ->
 		    lhttpc_lib:parse_url(ProxyUrl)
 	    end,
     {ChunkedUpload, Request} =
@@ -192,23 +192,23 @@ handle_call({request, Path, Method, Hdrs, Body, Options}, From,
 	  request = Request,
 	  requester = From,
 	  request_headers = Hdrs,
-	  attempts = proplists:get_value(send_retry, Options, 1),
+	  attempts = lhttpc_lib:get_value(send_retry, Options, 1),
 	  partial_upload = PartialUpload,
 	  chunked_upload = ChunkedUpload,
 	  partial_download = PartialDownload,
 	  download_window =
-	      proplists:get_value(window_size, PartialDownloadOptions,
+	      lhttpc_lib:get_value(window_size, PartialDownloadOptions,
 				  infinity),
 	  download_proc =
-	      proplists:get_value(recv_proc, PartialDownloadOptions,
+	      lhttpc_lib:get_value(recv_proc, PartialDownloadOptions,
 				  infinity),
 	  part_size =
-	      proplists:get_value(part_size, PartialDownloadOptions,
+	      lhttpc_lib:get_value(part_size, PartialDownloadOptions,
 				  infinity),
 	  proxy = Proxy,
 	  proxy_setup = (Socket /= undefined),
 	  proxy_ssl_options =
-	      proplists:get_value(proxy_ssl_options, Options, [])},
+	      lhttpc_lib:get_value(proxy_ssl_options, Options, [])},
     send_request(NewState);
 handle_call(_Msg, _From, #client_state{request = undefined} = State) ->
     {reply, {error, no_pending_request}, State};

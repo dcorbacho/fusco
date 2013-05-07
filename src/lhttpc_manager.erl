@@ -189,10 +189,10 @@ start_link() ->
     {ok, pid()} | {error, already_started}.
 start_link(Options0) ->
     Options = maybe_apply_defaults([connection_timeout, pool_size], Options0),
-    case proplists:get_value(name, Options) of
-        undefined ->
+    case lists:keyfind(name, 1, Options) of
+        false ->
             gen_server:start_link(?MODULE, Options, []);
-        Name ->
+        {name, Name} ->
             gen_server:start_link({local, Name}, ?MODULE, Options, [])
     end.
 
@@ -210,20 +210,20 @@ ensure_call(Pool, Pid, Host, Port, Ssl, Options) ->
         gen_server:call(Pool, SocketRequest, 100)
     catch
         exit:{noproc, _Reason} ->
-            case proplists:get_value(pool_ensure, Options, false) of
+            case lhttpc_lib:get_value(pool_ensure, Options, false) of
                 true ->
                     {ok, DefaultTimeout} = application:get_env(
                             lhttpc,
                             connection_timeout),
-                    ConnTimeout = proplists:get_value(pool_connection_timeout,
+                    ConnTimeout = lhttpc_lib:get_value(pool_connection_timeout,
                                                       Options,
                                                       DefaultTimeout),
                     {ok, DefaultMaxPool} = application:get_env(
                             lhttpc,
                             pool_size),
-                    PoolMaxSize = proplists:get_value(pool_max_size,
-                                                      Options,
-                                                      DefaultMaxPool),
+                    PoolMaxSize = lhttpc_lib:get_value(pool_max_size,
+						       Options,
+						       DefaultMaxPool),
                     case new_pool(Pool, ConnTimeout, PoolMaxSize) of
                         {ok, _Pid} ->
                             ensure_call(Pool, Pid, Host, Port, Ssl, Options);
@@ -288,8 +288,8 @@ init(Options) ->
         false ->
             ok
     end,
-    Timeout = proplists:get_value(connection_timeout, Options),
-    Size = proplists:get_value(pool_size, Options),
+    Timeout = lhttpc_lib:get_value(connection_timeout, Options),
+    Size = lhttpc_lib:get_value(pool_size, Options),
     {ok, #httpc_man{timeout = Timeout, max_pool_size = Size}}.
 
 %%------------------------------------------------------------------------------

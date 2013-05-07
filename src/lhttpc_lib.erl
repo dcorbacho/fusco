@@ -41,7 +41,9 @@
          dec/1,
          get_cookies/1,
          update_cookies/2,
-         to_lower/1]).
+         to_lower/1,
+	 get_value/2,
+	 get_value/3]).
 
 -include("lhttpc_types.hrl").
 -include("lhttpc.hrl").
@@ -208,6 +210,37 @@ update_cookies(RespHeaders, StateCookies) ->
 -spec to_lower(string()) -> string().
 to_lower(String) ->
     [char_to_lower(X) || X <- String].
+
+%%------------------------------------------------------------------------------
+%% @doc Gets value from tuple list
+%% @end
+%%------------------------------------------------------------------------------
+-spec get_value(Key, List) -> term() when
+      Key :: term(),
+      List :: [term()].
+get_value(Key, List) ->
+    case lists:keyfind(Key, 1, List) of
+	{Key, Value} ->
+	    Value;
+	false ->
+	    undefined
+    end.
+
+%%------------------------------------------------------------------------------
+%% @doc Gets value from tuple list. If it is not present, returns default value.
+%% @end
+%%------------------------------------------------------------------------------
+-spec get_value(Key, List, Default) -> term() when
+      Key :: term(),
+      List :: [term()],
+      Default :: term().
+get_value(Key, List, Default) ->
+    case lists:keyfind(Key, 1, List) of
+	{Key, Value} ->
+	    Value;
+	false ->
+	    Default
+    end.
 
 %%==============================================================================
 %% Internal functions
