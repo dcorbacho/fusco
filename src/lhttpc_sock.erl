@@ -86,7 +86,7 @@ connect(Host, Port, Options, Timeout, false) ->
 recv(Socket, true) ->
     ssl:recv(Socket, 0);
 recv(Socket, false) ->
-    gen_tcp:recv(Socket, 0).
+    prim_inet:recv(Socket, 0).
 
 %%------------------------------------------------------------------------------
 %% @spec (Socket, Length, SslFlag) -> {ok, Data} | {error, Reason}
@@ -124,7 +124,7 @@ recv(Socket, Length, false) ->
 send(Socket, Request, true) ->
     ssl:send(Socket, Request);
 send(Socket, Request, false) ->
-    gen_tcp:send(Socket, Request).
+    prim_inet:send(Socket, Request, []).
 
 %%------------------------------------------------------------------------------
 %% @spec (Socket, Process, SslFlag) -> ok | {error, Reason}
