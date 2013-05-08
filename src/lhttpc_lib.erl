@@ -43,7 +43,9 @@
          update_cookies/2,
          to_lower/1,
 	 get_value/2,
-	 get_value/3]).
+	 get_value/3,
+	 compare_strings/2,
+	 is_chunked/1]).
 
 -include("lhttpc_types.hrl").
 -include("lhttpc.hrl").
@@ -92,7 +94,7 @@ header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) when is_atom(ThisHdr) ->
 header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) when is_binary(ThisHdr) ->
     header_value(Hdr, [{binary_to_list(ThisHdr), Value}| Hdrs], Default);
 header_value(Hdr, [{ThisHdr, Value}| Hdrs], Default) ->
-    case lhttpc_lib:to_lower(ThisHdr) == Hdr of
+    case compare_strings(ThisHdr, Hdr) of
         true  -> case is_list(Value) of
                 true -> string:strip(Value);
                 false -> Value
@@ -210,6 +212,18 @@ update_cookies(RespHeaders, StateCookies) ->
 -spec to_lower(string()) -> string().
 to_lower(String) ->
     [char_to_lower(X) || X <- String].
+
+compare_strings([], []) ->
+    true;
+compare_strings([H | T], [H | Tail]) ->
+    compare_strings(T, Tail);
+compare_strings([H1 | T], [H2 | Tail]) ->
+    case char_to_lower(H1) == H2 of
+	true ->
+	    compare_strings(T, Tail);
+	false ->
+	    false
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc Gets value from tuple list
@@ -579,9 +593,9 @@ add_content_headers(Hdrs, _Body, true) ->
         {undefined, undefined} ->
             [{"Transfer-Encoding", "chunked"} | Hdrs];
         {undefined, TransferEncoding} ->
-            case lhttpc_lib:to_lower(TransferEncoding) of
-                "chunked" -> Hdrs;
-                _ -> erlang:error({error, unsupported_transfer_encoding})
+	    case compare_strings(TransferEncoding, "chunked") of
+		true -> Hdrs;
+                false -> erlang:error({error, unsupported_transfer_encoding})
             end;
         {_Length, undefined} ->
             Hdrs;
@@ -610,12 +624,7 @@ add_host(Hdrs, Host, Port) ->
 %%------------------------------------------------------------------------------
 -spec is_chunked(headers()) -> boolean().
 is_chunked(Hdrs) ->
-    TransferEncoding = lhttpc_lib:to_lower(
-            header_value("transfer-encoding", Hdrs, "undefined")),
-    case TransferEncoding of
-        "chunked" -> true;
-        _ -> false
-    end.
+    compare_strings(header_value("transfer-encoding", Hdrs, "undefined"), "chunked").
 
 %%------------------------------------------------------------------------------
 %% @private
