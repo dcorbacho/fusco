@@ -564,7 +564,7 @@ monitor_client(Dest, {Pid, _} = _From, #httpc_man{clients = Clients} = State) ->
 maybe_apply_defaults([], Options) ->
     Options;
 maybe_apply_defaults([OptName | Rest], Options) ->
-    case lists:keymember(OptName, Options) of
+    case lists:keymember(OptName, 1, Options) of
         true ->
             maybe_apply_defaults(Rest, Options);
         false ->
