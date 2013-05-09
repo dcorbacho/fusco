@@ -57,7 +57,7 @@
 
 -define(HTTP_LINE_END, "\r\n").
 -define(CONNECTION_HDR(HDRS, DEFAULT),
-        lhttpc_lib:header_value("connection", HDRS, DEFAULT)).
+        lhttpc_lib:header_value(<<"connection">>, HDRS, DEFAULT)).
 
 -record(client_state, {
         host :: string(),
@@ -171,7 +171,7 @@ handle_call({request, Path, Method, Hdrs, Body, Options}, From,
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
     PartialUpload = lhttpc_lib:get_value(partial_upload, Options, false),
-    PartialDownload = proplists:is_defined(partial_download, Options),
+    PartialDownload = lists:keymember(partial_download, 1, Options),
     PartialDownloadOptions = lhttpc_lib:get_value(partial_download, Options, []),
     Proxy = case lists:keyfind(proxy, 1, Options) of
 		false ->
@@ -479,60 +479,35 @@ check_send_result(State, Error) ->
 
 %%------------------------------------------------------------------------------
 %% @private
-%%------------------------------------------------------------------------------
--spec read_response(#client_state{}) -> {any(), socket()} | no_return().
-read_response(#client_state{socket = Socket, ssl = Ssl} = State) ->
-    lhttpc_sock:setopts(Socket, [{packet, http}], Ssl),
-    read_response(State, nil, {nil, nil}, []).
-
-%%------------------------------------------------------------------------------
-%% @private
 %% @doc @TODO This does not handle redirects at the moment.
 %% @end
 %%------------------------------------------------------------------------------
--spec read_response(#client_state{}, {integer(), integer()} | 'nil', http_status(), any()) ->
-    {any(), socket()} | no_return().
+-spec read_response(#client_state{}) -> {any(), socket()} | no_return().
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
-                            request_headers = ReqHdrs, cookies = Cookies} = State,
-              Vsn, {StatusCode, _} = Status, Hdrs) ->
-    case lhttpc_sock:recv(Socket, Ssl) of
-        {ok, {http_response, NewVsn, NewStatusCode, Reason}} ->
-            NewStatus = {NewStatusCode, Reason},
-            read_response(State, NewVsn, NewStatus, Hdrs);
-        {ok, {http_header, _, Name, _, Value}} ->
-            Header = {lhttpc_lib:maybe_atom_to_list(Name), Value},
-            read_response(State, Vsn, Status, [Header | Hdrs]);
-        {ok, http_eoh} when StatusCode >= 100, StatusCode =< 199 ->
-            % RFC 2616, section 10.1:
-            % A client MUST be prepared to accept one or more
-            % 1xx status responses prior to a regular
-            % response, even if the client does not expect a
-            % 100 (Continue) status message. Unexpected 1xx
-            % status responses MAY be ignored by a user agent.
-            read_response(State, nil, {nil, nil}, []);
-        {ok, http_eoh} ->
-            lhttpc_sock:setopts(Socket, [{packet, raw}], Ssl),
-            {Reply, NewState} = handle_response_body(State, Vsn, Status, Hdrs),
-            case Reply of
-                noreply ->
-                    %when partial_download is used. We do not close the socket.
-                    {noreply, NewState#client_state{socket = Socket}};
-                {error, Reason} ->
-                    {reply, {error, Reason}, NewState#client_state{socket = undefined}};
-                _ ->
-                    NewHdrs = element(2, Reply),
-                    FinalCookies = case UseCookies of
-                        true ->
-                            lhttpc_lib:update_cookies(NewHdrs, Cookies);
-                        _ ->
-                            []
-                    end,
-                    NewSocket = maybe_close_socket(State, Vsn, ReqHdrs, NewHdrs),
-                    {reply, {ok, Reply}, NewState#client_state{socket = NewSocket,
-                                                               request = undefined,
-                                                               cookies = FinalCookies}}
-            end;
-        {error, closed} ->
+                            request_headers = ReqHdrs, cookies = Cookies} = State) ->
+    case lhttpc_protocol:recv(Socket, Ssl) of
+	{_Vsn, <<$1,_,_>>, _Reason, _Hdrs, _Body} ->
+	    %% RFC 2616, section 10.1:
+            %% A client MUST be prepared to accept one or more
+            %% 1xx status responses prior to a regular
+            %% response, even if the client does not expect a
+            %% 100 (Continue) status message. Unexpected 1xx
+            %% status responses MAY be ignored by a user agent.
+            read_response(State);
+	{Vsn, Status, Reason, NewHdrs, Body} ->
+	    FinalCookies =
+		case UseCookies of
+		    true ->
+			lhttpc_lib:update_cookies(NewHdrs, Cookies);
+		    _ ->
+			[]
+		end,
+	    NewSocket = maybe_close_socket(State, Vsn, ReqHdrs, NewHdrs),
+	    {reply, {ok, {{Status, Reason}, NewHdrs, Body}},
+	     State#client_state{socket = NewSocket,
+				   request = undefined,
+				   cookies = FinalCookies}};
+	{error, closed} ->
             %% TODO does it work for partial uploads? I think should return an error
 
             % Either we only noticed that the socket was closed after we
@@ -541,109 +516,11 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             % closing connections without sending responses.
             % If this the first attempt to send the request, we will try again.
             close_socket(State),
-            NewState = State#client_state{socket = undefined},
-            send_request(NewState);
-        {ok, {http_error, _} = Reason} ->
-            {reply, {error, Reason}, State#client_state{request = undefined}};
-        {error, Reason} ->
-            {reply, {error, Reason}, State#client_state{request = undefined}}
+            send_request(State#client_state{socket = undefined});
+	{error, Reason} ->
+	    close_socket(State),
+	    {reply, {error, Reason}, State#client_state{socket = undefined}}
     end.
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @doc Handles the reading of the response body.
-%% @end
-%%------------------------------------------------------------------------------
--spec handle_response_body(#client_state{}, {integer(), integer()}, http_status(), headers()) ->
-    {http_status(), headers(), body()} | {http_status(), headers()} |
-    {'noreply', any()} | {{'error', any()}, any()}.
-handle_response_body(#client_state{partial_download = false} = State, Vsn,
-                     Status, Hdrs) ->
-    %when {partial_download, PartialDownloadOptions} option is NOT used.
-    Socket = State#client_state.socket,
-    Ssl = State#client_state.ssl,
-    Method = State#client_state.method,
-    Reply = case has_body(Method, element(1, Status), Hdrs) of
-        true  -> read_body(Vsn, Hdrs, Ssl, Socket, body_type(Hdrs));
-        false -> {<<>>, Hdrs}
-    end,
-    case Reply of
-        {error, Reason} ->
-            {{error, Reason}, State};
-        {Body, NewHdrs} ->
-            {{Status, NewHdrs, Body}, State}
-    end;
-handle_response_body(#client_state{partial_download = true, requester =
-                                   Requester, method = Method} = State, Vsn, Status, Hdrs) ->
-    %when {partial_download, PartialDownloadOptions} option is used.
-    case has_body(Method, element(1, Status), Hdrs) of
-        true ->
-            Response = {ok, {Status, Hdrs, partial_download}},
-            gen_server:reply(Requester, Response),
-            NewState = State#client_state{download_info = {Vsn, Hdrs},
-                                          body_length = body_type(Hdrs)},
-            {noreply, read_partial_body(NewState)};
-        false ->
-            {{Status, Hdrs, undefined}, State}
-    end.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
--spec has_body(method(), integer(), headers()) -> boolean().
-has_body("HEAD", _, _) ->
-    % HEAD responses aren't allowed to include a body
-    false;
-has_body("OPTIONS", _, Hdrs) ->
-    % OPTIONS can include a body, if Content-Length or Transfer-Encoding
-    % indicates it
-    ContentLength = lhttpc_lib:header_value("content-length", Hdrs),
-    TransferEncoding = lhttpc_lib:header_value("transfer-encoding", Hdrs),
-    case {ContentLength, TransferEncoding} of
-        {undefined, undefined} -> false;
-        {_, _}                 -> true
-    end;
-has_body(_, 204, _) ->
-    false; % RFC 2616 10.2.5: 204 No Content
-has_body(_, 304, _) ->
-    false; % RFC 2616 10.3.5: 304 Not Modified
-has_body(_, _, _) ->
-    true. % All other responses are assumed to have a body
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @doc  Find out how to read the entity body from the request.
-% * If we have a Content-Length, just use that and read the complete
-%   entity.
-% * If Transfer-Encoding is set to chunked, we should read one chunk at
-%   the time
-% * If neither of this is true, we need to read until the socket is
-%   closed (AFAIK, this was common in versions before 1.1).
-%% @end
-%%------------------------------------------------------------------------------
--spec body_type(headers()) -> 'chunked' | 'infinite' | {fixed_length, integer()}.
-body_type(Hdrs) ->
-    case lhttpc_lib:header_value("content-length", Hdrs) of
-        undefined ->
-	    case lhttpc_lib:is_chunked(Hdrs) of
-		true -> chunked;
-		false -> infinite
-            end;
-        ContentLength ->
-            {fixed_length, list_to_integer(ContentLength)}
-    end.
-%%------------------------------------------------------------------------------
-%%% @private
-%%% @doc Called when {partial_download, PartialDownloadOptions} option is NOT used.
-%%% @end
-%%------------------------------------------------------------------------------
-read_body(_Vsn, Hdrs, Ssl, Socket, chunked) ->
-    read_chunked_body(Socket, Ssl, Hdrs, []);
-read_body(Vsn, Hdrs, Ssl, Socket, infinite) ->
-    check_infinite_response(Vsn, Hdrs),
-    read_infinite_body(Socket, Hdrs, Ssl);
-read_body(_Vsn, Hdrs, Ssl, Socket, {fixed_length, ContentLength}) ->
-    read_length(Hdrs, Ssl, Socket, ContentLength).
 
 %%------------------------------------------------------------------------------
 %%% @private
@@ -692,18 +569,6 @@ read_body_part(#client_state{socket = Socket, ssl = Ssl, part_size = PartSize},
 read_body_part(#client_state{socket = Socket, ssl = Ssl, part_size = PartSize},
                ContentLength) when PartSize > ContentLength ->
     lhttpc_sock:recv(Socket, ContentLength, Ssl).
-
-%%------------------------------------------------------------------------------
-%%% @private
-%%------------------------------------------------------------------------------
-read_length(Hdrs, Ssl, Socket, Length) ->
-    case lhttpc_sock:recv(Socket, Length, Ssl) of
-        {ok, Data} ->
-            {Data, Hdrs};
-        {error, Reason} ->
-            lhttpc_sock:close(Socket, Ssl),
-            {error, Reason}
-    end.
 
 %%------------------------------------------------------------------------------
 %%% @private
@@ -772,20 +637,6 @@ reply_chunked_part(#client_state{download_proc = Pid}, Buffer, Window) ->
 %%------------------------------------------------------------------------------
 %%% @private
 %%------------------------------------------------------------------------------
-read_chunked_body(Socket, Ssl, Hdrs, Chunks) ->
-    case read_chunk_size(Socket, Ssl) of
-        0 ->
-            Body = list_to_binary(lists:reverse(Chunks)),
-            {_, NewHdrs} = read_trailers(Socket, Ssl, [], Hdrs),
-            {Body, NewHdrs};
-        Size ->
-            Chunk = read_chunk(Socket, Ssl, Size),
-            read_chunked_body(Socket, Ssl, Hdrs, [Chunk | Chunks])
-    end.
-
-%%------------------------------------------------------------------------------
-%%% @private
-%%------------------------------------------------------------------------------
 chunk_size(Bin) ->
     erlang:list_to_integer(lists:reverse(chunk_size(Bin, [])), 16).
 
@@ -808,7 +659,6 @@ chunk_size(<<Char, Binary/binary>>, Chars) ->
 read_partial_chunk(Socket, Ssl, ChunkSize, ChunkSize) ->
     {read_chunk(Socket, Ssl, ChunkSize), 0};
 read_partial_chunk(Socket, Ssl, Size, ChunkSize) ->
-    lhttpc_sock:setopts(Socket, [{packet, raw}], Ssl),
     case lhttpc_sock:recv(Socket, Size, Ssl) of
         {ok, Chunk} ->
             {Chunk, ChunkSize - Size};
@@ -820,7 +670,6 @@ read_partial_chunk(Socket, Ssl, Size, ChunkSize) ->
 %% @private
 %%------------------------------------------------------------------------------
 read_chunk(Socket, Ssl, Size) ->
-    lhttpc_sock:setopts(Socket, [{packet, raw}], Ssl),
     case lhttpc_sock:recv(Socket, Size + 2, Ssl) of
         {ok, <<Chunk:Size/binary, ?HTTP_LINE_END>>} ->
             Chunk;
@@ -889,14 +738,14 @@ read_infinite_body_part(#client_state{socket = Socket, ssl = Ssl}) ->
 %% @private
 %%------------------------------------------------------------------------------
 check_infinite_response({1, Minor}, Hdrs) when Minor >= 1 ->
-    HdrValue = lhttpc_lib:header_value("connection", Hdrs, "keep-alive"),
-    case lhttpc_lib:compare_strings(HdrValue, "close") of
+    HdrValue = lhttpc_lib:header_value(<<"connection">>, Hdrs, <<"keep-alive">>),
+    case lhttpc_lib:compare_strings(HdrValue, <<"close">>) of
         true -> ok;
         _       -> erlang:error(no_content_length)
     end;
 check_infinite_response(_, Hdrs) ->
-    HdrValue = lhttpc_lib:header_value("connection", Hdrs, "close"),
-    case lhttpc_lib:compare_strings(HdrValue, "keep-alive") of
+    HdrValue = lhttpc_lib:header_value(<<"connection">>, Hdrs, <<"close">>),
+    case lhttpc_lib:compare_strings(HdrValue, <<"keep-alive">>) of
         true -> erlang:error(no_content_length);
         _          -> ok
     end.
@@ -904,34 +753,10 @@ check_infinite_response(_, Hdrs) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
--spec read_infinite_body(socket(), headers(), boolean()) ->
-    {binary(), headers()} | no_return().
-read_infinite_body(Socket, Hdrs, Ssl) ->
-    read_until_closed(Socket, <<>>, Hdrs, Ssl).
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
--spec read_until_closed(socket(), binary(), any(), boolean()) ->
-    {binary(), any()} | no_return().
-read_until_closed(Socket, Acc, Hdrs, Ssl) ->
-    case lhttpc_sock:recv(Socket, Ssl) of
-        {ok, Body} ->
-            NewAcc = <<Acc/binary, Body/binary>>,
-            read_until_closed(Socket, NewAcc, Hdrs, Ssl);
-        {error, closed} ->
-            {Acc, Hdrs};
-        {error, Reason} ->
-            erlang:error(Reason)
-    end.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
 maybe_close_socket(#client_state{socket = Socket} = State, {1, Minor},
                    ReqHdrs, RespHdrs) when Minor >= 1->
-    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, "keep-alive"), "close"),
-    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, "keep-alive"), "close"),
+    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, <<"keep-alive">>), <<"close">>),
+    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, <<"keep-alive">>), <<"close">>),
     if
         ClientConnection orelse ServerConnection ->
             close_socket(State),
@@ -940,8 +765,8 @@ maybe_close_socket(#client_state{socket = Socket} = State, {1, Minor},
             Socket
     end;
 maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, RespHdrs) ->
-    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, "keep-alive"), "close"),
-    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, "close"), "keep-alive"),
+    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, <<"keep-alive">>), <<"close">>),
+    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, <<"close">>), <<"keep-alive">>),
     if
         ClientConnection orelse (not ServerConnection) ->
             close_socket(State),
@@ -1021,7 +846,7 @@ new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOpt
         false ->
             ConnectOptions
     end,
-    SocketOptions = [binary, {packet, http}, {nodelay, true}, {reuseaddr, true},
+    SocketOptions = [binary, {packet, raw}, {nodelay, true}, {reuseaddr, true},
                      {active, false} | ConnectOptions2],
     try lhttpc_sock:connect(Host, Port, SocketOptions, Timeout, Ssl) of
         {ok, Socket} ->
