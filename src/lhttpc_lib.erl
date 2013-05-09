@@ -172,7 +172,7 @@ format_hdrs(Headers) ->
 %%------------------------------------------------------------------------------
 -spec get_cookies(headers()) -> [#lhttpc_cookie{}].
 get_cookies(Hdrs) ->
-    [create_cookie_record(Value) || {<<"set-cookie">>, Value} <- Hdrs].
+    [Value || {<<"set-cookie">>, Value} <- Hdrs].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -183,12 +183,11 @@ get_cookies(Hdrs) ->
 update_cookies(RespHeaders, StateCookies) ->
     ReceivedCookies = lhttpc_lib:get_cookies(RespHeaders),
     %% substitute the cookies with the same name, add the others.
-    Substituted = lists:foldl(fun(X, Acc) ->
-                                lists:keystore(X#lhttpc_cookie.name,
-                                                #lhttpc_cookie.name, Acc, X)
+    Substituted = lists:foldl(fun({Name, _Value} = X, Acc) ->
+                                lists:keystore(Name, 1, Acc, X)
                               end, StateCookies, ReceivedCookies),
     %% delete the cookies whose value is set to "deleted"
-    NewCookies = [ X || X <- Substituted, X#lhttpc_cookie.value /= "deleted"],
+    NewCookies = [ X || {_, Value} = X <- Substituted, Value /= <<"deleted">>],
     %% Delete the cookies that are expired (check max-age and expire fields).
     delete_expired_cookies(NewCookies).
 
@@ -259,35 +258,6 @@ delete_expired_cookies(Cookies) ->
            =< X#lhttpc_cookie.max_age, X#lhttpc_cookie.expires == never orelse
            calendar:datetime_to_gregorian_seconds(calendar:universal_time())
            =< calendar:datetime_to_gregorian_seconds(X#lhttpc_cookie.expires)].
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-create_cookie_record(Cookie) ->
-    create_cookie_record(Cookie, <<>>).
-
-create_cookie_record(<<$=, Rest/bits>>, Name) ->
-    create_cookie_record(Rest, Name, <<>>);
-create_cookie_record(<<C, Rest/bits>>, Name) ->
-    create_cookie_record(Rest, <<Name/bits, C>>).
-
-create_cookie_record(<<>>, Name, Value) ->
-    #lhttpc_cookie{name = Name,
-		   value = Value};
-create_cookie_record(<<$;, Rest/bits>>, Name, Value) ->
-    other_cookie_elements(Rest, #lhttpc_cookie{name = Name,
-					       value = Value});
-create_cookie_record(<<C, Rest/bits>>, Name, Value) ->
-    create_cookie_record(Rest, Name, <<Value/bits, C>>).
-
-%%------------------------------------------------------------------------------
-%% @doc Extracts the interesting fields from the cookie in the header. We ignore
-%% the domain since the client only connects to one domain at the same time.
-%% @end
-%% @private
-%%------------------------------------------------------------------------------
-other_cookie_elements(_, Cookie) ->
-    Cookie.
 
 %%------------------------------------------------------------------------------
 %% @private

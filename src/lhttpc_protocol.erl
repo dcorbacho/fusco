@@ -53,6 +53,8 @@ decode_header(<<>>, Acc, State) ->
     end;
 decode_header(<<$\s, Rest/bits>>, Acc, State) ->
     decode_header(Rest, Acc, State);
+decode_header(<<$:, Rest/bits>>, <<"set-cookie">> = Header, State) ->
+    decode_cookie_value(Rest, {Header, <<>>}, State);
 decode_header(<<$:, Rest/bits>>, Header, State) ->
     decode_header_value(Rest, {Header, <<>>}, State);
 decode_header(<<$\n, Rest/bits>>, <<>>, State) ->
@@ -133,6 +135,29 @@ decode_header_value(<<$\r, $\n, Rest/bits>>, Acc, State) ->
     decode_header(Rest, <<>>, State#state{headers = [Acc | State#state.headers]});
 decode_header_value(<<C, Rest/bits>>, {Header, Value}, State) ->
     decode_header_value(Rest, {Header, <<Value/binary, C>>}, State).
+
+%% TODO decode cookie values, this only accepts 'set-cookie: a=b'
+decode_cookie_value(<<>>, Acc, State) ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_cookie_value(Data, Acc, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;
+decode_cookie_value(<<$\s, Rest/bits>>, Acc, State) ->
+    decode_cookie_value(Rest, Acc, State);
+decode_cookie_value(<<$\t, Rest/bits>>, Acc, State) ->
+    decode_cookie_value(Rest, Acc, State);
+decode_cookie_value(<<$=, Rest/bits>>, {Header, Name}, State) ->
+    decode_cookie_value(Rest, {Header, Name, <<>>}, State);
+decode_cookie_value(<<$\n, Rest/bits>>, {Header, Name, Value}, State) ->
+    decode_header(Rest, <<>>, State#state{headers = [{Header, {Name, Value}} | State#state.headers]});
+decode_cookie_value(<<$\r, $\n, Rest/bits>>, {Header, Name, Value}, State) ->
+    decode_header(Rest, <<>>, State#state{headers = [{Header, {Name, Value}} | State#state.headers]});
+decode_cookie_value(<<C, Rest/bits>>, {Header, Name}, State) ->
+    decode_cookie_value(Rest, {Header, <<Name/binary, C>>}, State);
+decode_cookie_value(<<C, Rest/bits>>, {Header, Name, Value}, State) ->
+    decode_cookie_value(Rest, {Header, Name, <<Value/binary, C>>}, State).
 
 decode_body(Rest, State) ->
     {State#state.version, State#state.status_code, State#state.reason, State#state.headers, Rest}.
