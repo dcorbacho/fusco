@@ -739,13 +739,13 @@ read_infinite_body_part(#client_state{socket = Socket, ssl = Ssl}) ->
 %%------------------------------------------------------------------------------
 check_infinite_response({1, Minor}, Hdrs) when Minor >= 1 ->
     HdrValue = lhttpc_lib:header_value(<<"connection">>, Hdrs, <<"keep-alive">>),
-    case lhttpc_lib:compare_strings(HdrValue, <<"close">>) of
+    case lhttpc_lib:compare_strings(HdrValue, "close") of
         true -> ok;
         _       -> erlang:error(no_content_length)
     end;
 check_infinite_response(_, Hdrs) ->
     HdrValue = lhttpc_lib:header_value(<<"connection">>, Hdrs, <<"close">>),
-    case lhttpc_lib:compare_strings(HdrValue, <<"keep-alive">>) of
+    case lhttpc_lib:compare_strings(HdrValue, "keep-alive") of
         true -> erlang:error(no_content_length);
         _          -> ok
     end.
@@ -755,8 +755,8 @@ check_infinite_response(_, Hdrs) ->
 %%------------------------------------------------------------------------------
 maybe_close_socket(#client_state{socket = Socket} = State, {1, Minor},
                    ReqHdrs, RespHdrs) when Minor >= 1->
-    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, <<"keep-alive">>), <<"close">>),
-    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, <<"keep-alive">>), <<"close">>),
+    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, <<"keep-alive">>), "close"),
+    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, <<"keep-alive">>), "close"),
     if
         ClientConnection orelse ServerConnection ->
             close_socket(State),
@@ -765,8 +765,8 @@ maybe_close_socket(#client_state{socket = Socket} = State, {1, Minor},
             Socket
     end;
 maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, RespHdrs) ->
-    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, <<"keep-alive">>), <<"close">>),
-    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, <<"close">>), <<"keep-alive">>),
+    ClientConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(ReqHdrs, <<"keep-alive">>), "close"),
+    ServerConnection = lhttpc_lib:compare_strings(?CONNECTION_HDR(RespHdrs, <<"close">>), "keep-alive"),
     if
         ClientConnection orelse (not ServerConnection) ->
             close_socket(State),

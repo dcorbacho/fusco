@@ -172,7 +172,12 @@ format_hdrs(Headers) ->
 %%------------------------------------------------------------------------------
 -spec get_cookies(headers()) -> [#lhttpc_cookie{}].
 get_cookies(Hdrs) ->
-    [lhttpc_protocol:decode_cookie(Value) || {<<"set-cookie">>, Value} <- Hdrs].
+    get_cookies(Hdrs, []).
+
+get_cookies([{<<"set-cookie">>, _} = C | T], Acc) ->
+    get_cookies(T, [C | Acc]);
+get_cookies(_, Acc) ->
+    Acc.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -203,11 +208,11 @@ update_cookies(RespHeaders, StateCookies) ->
 to_lower(String) ->
     [char_to_lower(X) || X <- String].
 
-compare_strings(<<>>, <<>>) ->
+compare_strings(<<>>, []) ->
     true;
-compare_strings(<<C, Rest1/bits>>, <<C, Rest2/bits>>) ->
+compare_strings(<<C, Rest1/bits>>, [C | Rest2]) ->
     compare_strings(Rest1, Rest2);
-compare_strings(<<C1, Rest1/bits>>, <<C2, Rest2/bits>>) ->
+compare_strings(<<C1, Rest1/bits>>, [C2 | Rest2]) ->
     case char_to_lower(C1) == C2 of
 	true ->
 	    compare_strings(Rest1, Rest2);
@@ -493,7 +498,7 @@ add_content_headers(Hdrs, _Body, true) ->
         {undefined, undefined} ->
             [{<<"Transfer-Encoding">>, <<"chunked">>} | Hdrs];
         {undefined, TransferEncoding} ->
-	    case compare_strings(TransferEncoding, <<"chunked">>) of
+	    case compare_strings(TransferEncoding, "chunked") of
 		true -> Hdrs;
                 false -> erlang:error({error, unsupported_transfer_encoding})
             end;
@@ -524,7 +529,7 @@ add_host(Hdrs, Host, Port) ->
 %%------------------------------------------------------------------------------
 -spec is_chunked(headers()) -> boolean().
 is_chunked(Hdrs) ->
-    compare_strings(header_value(<<"transfer-encoding">>, Hdrs, <<"undefined">>), <<"chunked">>).
+    compare_strings(header_value(<<"transfer-encoding">>, Hdrs, <<"undefined">>), "chunked").
 
 %%------------------------------------------------------------------------------
 %% @private

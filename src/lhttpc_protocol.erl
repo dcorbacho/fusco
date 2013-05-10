@@ -9,11 +9,17 @@
 
 -include("lhttpc.hrl").
 
--record(state, {socket, ssl, version, status_code, reason, headers = []}).
+-record(state, {socket, ssl, version, status_code, reason, headers = [],
+		cookies = []}).
 
 %% API
 -export([recv/2,
 	 decode_cookie/1]).
+
+%% TEST
+-export([decode_header_value/4,
+	 decode_header/3,
+	 empty_state/0]).
 
 %% TODO handle partial downloads
 
@@ -60,9 +66,9 @@ decode_header(<<$\s, Rest/bits>>, Acc, State) ->
 decode_header(<<$:, Rest/bits>>, Header, State) ->
     decode_header_value_ws(Rest, Header, State);
 decode_header(<<$\n, Rest/bits>>, <<>>, State) ->
-    decode_body(Rest, State#state{headers = State#state.headers});
+    decode_body(Rest, State);
 decode_header(<<$\r, $\n, Rest/bits>>, <<>>, State) ->
-    decode_body(Rest, State#state{headers = State#state.headers});
+    decode_body(Rest, State);
 decode_header(<<$\r, $\n, _Rest/bits>>, _, _State) ->
     {error, 400};
 decode_header(<<$A, Rest/bits>>, Header, State) ->
@@ -134,8 +140,12 @@ decode_header_value(<<>>, H, V, State) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
+decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
+    decode_header(Rest, <<>>, State#state{cookies = [{H, V} | State#state.cookies]});
 decode_header_value(<<$\n, Rest/bits>>, H, V, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
+decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
+    decode_header(Rest, <<>>, State#state{cookies = [{H, V} | State#state.cookies]});
 decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
 decode_header_value(<<C, Rest/bits>>, H, V, State) ->
@@ -243,7 +253,7 @@ decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
     decode_cookie_av_value(Rest, Co, AV, <<Value/binary, C>>).
 
 decode_body(Rest, State) ->
-    {State#state.version, State#state.status_code, State#state.reason, State#state.headers, Rest}.
+    {State#state.version, State#state.status_code, State#state.reason, lists:append(State#state.cookies, State#state.headers), Rest}.
 
 max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.
@@ -282,3 +292,6 @@ month(<<$N,$o,$v>>) ->
     11;
 month(<<$D,$e,$c>>) ->
     12.
+
+empty_state() ->
+    #state{}.

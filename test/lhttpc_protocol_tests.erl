@@ -8,10 +8,12 @@
 
 -include_lib("eunit/include/eunit.hrl").
 
+-export([test_decode_header/0]).
 
 lhttpc_protocol_test_() ->
     [{"HTTP version", ?_test(http_version())},
-     {"Cookies", ?_test(cookies())}].
+     {"Cookies", ?_test(cookies())},
+     {"Decode header", ?_test(decode_header())}].
 
 http_version() ->
     Port = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
@@ -36,6 +38,22 @@ cookies() ->
 		   {<<"set-cookie">>,<<"name=value">>} | _],
 		  <<"Great success!">>},
 		 Recv).
+
+decode_header() ->
+    ?assertMatch({undefined, undefined, undefined,
+		  [{<<"set-cookie">>,<<"name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT">>},
+		   {<<"set-cookie">>,<<"name=value">>},
+		   {<<"content-length">>, <<"14">>},
+		   {<<"content-type">>,<<"text/plain">>}],
+		  <<"Great success!">>},
+		 test_decode_header()).
+
+test_decode_header() ->
+    lhttpc_protocol:decode_header(header(), <<>>,
+				  lhttpc_protocol:empty_state()).
+
+header() ->
+    <<"Content-type: text/plain\r\nContent-length: 14\r\nSet-Cookie: name=value\r\nSet-Cookie: name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT\r\n\r\nGreat success!">>.
 
 user_response(Message) ->
     fun(Module, Socket, _, _, _) ->
