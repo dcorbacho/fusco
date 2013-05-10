@@ -375,7 +375,7 @@ set_cookie_response(Module, Socket, _, _, _) ->
        "HTTP/1.1 200 OK\r\n"
        "Connection: Keep-Alive\r\n"
        "Set-Cookie: name=value\r\n"
-       "Set-Cookie: name2=value2; Expires=Wed, 09-Jun-2021 10:18:14 GMT\r\n"
+       "Set-Cookie: name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT\r\n"
        "Content-type: text/plain\r\n"
        "Content-length: 0\r\n\r\n"
       ).
@@ -395,7 +395,7 @@ expired_cookie_response(Module, Socket, _Request, Headers, _Body) ->
           Socket,
           "HTTP/1.1 200 OK\r\n"
           "Connection: Keep-Alive\r\n"
-          "Set-Cookie: name2=value2; Expires=Wed, 09-Jun-1975 10:18:14 GMT\r\n"
+          "Set-Cookie: name2=value2; Expires=Wed, 09 Jun 1975 10:18:14 GMT\r\n"
           "Content-type: text/plain\r\n"
               "Content-length: 0\r\n\r\n"
          );
@@ -405,7 +405,7 @@ expired_cookie_response(Module, Socket, _Request, Headers, _Body) ->
           Socket,
           "HTTP/1.1 200 OK\r\n"
           "Connection: Keep-Alive\r\n"
-          "Set-Cookie: name2=value2; Expires=Wed, 09-Jun-1975 10:18:14 GMT\r\n"
+          "Set-Cookie: name2=value2; Expires=Wed, 09 Jun 1975 10:18:14 GMT\r\n"
           "Content-type: text/plain\r\n"
               "Content-length: 0\r\n\r\n"
          )

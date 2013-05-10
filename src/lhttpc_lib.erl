@@ -172,7 +172,7 @@ format_hdrs(Headers) ->
 %%------------------------------------------------------------------------------
 -spec get_cookies(headers()) -> [#lhttpc_cookie{}].
 get_cookies(Hdrs) ->
-    [Value || {<<"set-cookie">>, Value} <- Hdrs].
+    [lhttpc_protocol:decode_cookie(Value) || {<<"set-cookie">>, Value} <- Hdrs].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -182,14 +182,17 @@ get_cookies(Hdrs) ->
 -spec update_cookies(headers(), [#lhttpc_cookie{}]) -> [#lhttpc_cookie{}].
 update_cookies(RespHeaders, StateCookies) ->
     ReceivedCookies = lhttpc_lib:get_cookies(RespHeaders),
-    %% substitute the cookies with the same name, add the others.
-    Substituted = lists:foldl(fun({Name, _Value} = X, Acc) ->
-                                lists:keystore(Name, 1, Acc, X)
-                              end, StateCookies, ReceivedCookies),
-    %% delete the cookies whose value is set to "deleted"
-    NewCookies = [ X || {_, Value} = X <- Substituted, Value /= <<"deleted">>],
+    %% substitute the cookies with the same name, add the others, delete.
+    Substituted =
+    	lists:foldl(fun(X = #lhttpc_cookie{value = <<"deleted">>}, Acc) ->
+			    lists:keydelete(X#lhttpc_cookie.name,
+					    #lhttpc_cookie.name, Acc);
+		       (X, Acc) ->
+    			    lists:keystore(X#lhttpc_cookie.name,
+					   #lhttpc_cookie.name, Acc, X)
+    		    end, StateCookies, ReceivedCookies),
     %% Delete the cookies that are expired (check max-age and expire fields).
-    delete_expired_cookies(NewCookies).
+    delete_expired_cookies(Substituted).
 
 
 %%------------------------------------------------------------------------------
@@ -252,12 +255,16 @@ get_value(Key, List, Default) ->
 %%------------------------------------------------------------------------------
 -spec delete_expired_cookies([#lhttpc_cookie{}]) -> [#lhttpc_cookie{}].
 delete_expired_cookies(Cookies) ->
-    [ X || X <- Cookies,
-           X#lhttpc_cookie.max_age == undefined orelse
-           timer:now_diff(os:timestamp(), X#lhttpc_cookie.timestamp)
-           =< X#lhttpc_cookie.max_age, X#lhttpc_cookie.expires == never orelse
-           calendar:datetime_to_gregorian_seconds(calendar:universal_time())
-           =< calendar:datetime_to_gregorian_seconds(X#lhttpc_cookie.expires)].
+    [ X || X <- Cookies, not expires(X)].
+
+
+expires(#lhttpc_cookie{max_age = Max,
+		       timestamp = T}) when Max =/= undefined ->
+    timer:now_diff(os:timestamp(), T) > Max;
+expires(#lhttpc_cookie{expires = Exp}) when Exp =/= undefined ->
+    calendar:universal_time() > Exp;
+expires(_) ->
+    false.
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -446,17 +453,16 @@ add_cookie_headers(Hdrs, Cookies) ->
 %%------------------------------------------------------------------------------
 make_cookie_string([], Acc) ->
     Acc;
-make_cookie_string([Cookie | []], Acc) ->
-    Last = cookie_string(Cookie) -- "; ",
-    make_cookie_string([], Acc ++ Last);
+make_cookie_string([Cookie | Rest], []) ->
+    make_cookie_string(Rest, cookie_string(Cookie));
 make_cookie_string([Cookie | Rest], Acc) ->
-    make_cookie_string(Rest,  Acc ++ cookie_string(Cookie)).
+    make_cookie_string(Rest,  [cookie_string(Cookie), "; " | Acc]).
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
 cookie_string(#lhttpc_cookie{name = Name, value = Value}) ->
-    Name ++ "=" ++ Value ++ "; ".
+    [Name, <<"=">>, Value].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -552,32 +558,6 @@ maybe_ipv6_enclose(Host) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
-char_to_lower($a) -> $a;
-char_to_lower($b) -> $b;
-char_to_lower($c) -> $c;
-char_to_lower($d) -> $d;
-char_to_lower($e) -> $e;
-char_to_lower($f) -> $f;
-char_to_lower($g) -> $g;
-char_to_lower($h) -> $h;
-char_to_lower($i) -> $i;
-char_to_lower($j) -> $j;
-char_to_lower($k) -> $k;
-char_to_lower($l) -> $l;
-char_to_lower($m) -> $m;
-char_to_lower($n) -> $n;
-char_to_lower($o) -> $o;
-char_to_lower($p) -> $p;
-char_to_lower($q) -> $q;
-char_to_lower($r) -> $r;
-char_to_lower($s) -> $s;
-char_to_lower($t) -> $t;
-char_to_lower($u) -> $u;
-char_to_lower($v) -> $v;
-char_to_lower($w) -> $w;
-char_to_lower($x) -> $x;
-char_to_lower($y) -> $y;
-char_to_lower($z) -> $z;
 char_to_lower($A) -> $a;
 char_to_lower($B) -> $b;
 char_to_lower($C) -> $c;

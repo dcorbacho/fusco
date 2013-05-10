@@ -34,11 +34,11 @@
 }).
 
 -record(lhttpc_cookie, {
-	  name = "" :: string(),
-	  value = "" :: string(),
-	  expires = 'never' :: {{integer(), integer(), integer()},
+	  name :: binary(),
+	  value :: binary(),
+	  expires :: {{integer(), integer(), integer()},
 				{integer(), integer(), integer()}} | atom(),
-	  path = 'undefined' :: string() | atom(),
-	  max_age = 'undefined' :: integer() | atom(),
-	  timestamp = 'undefined' :: atom() | {integer(), integer(), integer()}
+	  path :: binary(),
+	  max_age :: integer() | atom(),
+	  timestamp :: atom() | {integer(), integer(), integer()}
 }).

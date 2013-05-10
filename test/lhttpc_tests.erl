@@ -156,7 +156,7 @@ missing_basic_auth() ->
     Port = start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port, "/empty"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
-    ?assertEqual({401, "Unauthorized"}, status(Response)),
+    ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
     ?assertEqual(<<"missing_auth">>, body(Response)).
 
 wrong_basic_auth() ->
@@ -165,7 +165,7 @@ wrong_basic_auth() ->
     Port = start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port, "/empty", User, "wrong_password"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
-    ?assertEqual({401, "Unauthorized"}, status(Response)),
+    ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
     ?assertEqual(<<"wrong_auth">>, body(Response)).
 
 get_with_mandatory_hdrs() ->
@@ -173,9 +173,9 @@ get_with_mandatory_hdrs() ->
     URL = url(Port, "/host"),
     Body = list_to_binary(webserver_utils:default_string()),
     Hdrs = [
-        {"content-length", integer_to_list(size(Body))},
-        {"host", "localhost"}
-    ],
+	    {<<"content-length">>, integer_to_list(size(Body))},
+	    {<<"host">>, "localhost"}
+	   ],
     {ok, Response} = lhttpc:request(URL, "POST", Hdrs, Body, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
@@ -185,9 +185,9 @@ get_with_mandatory_hdrs_by_atoms() ->
     URL = url(Port, "/host"),
     Body = list_to_binary(webserver_utils:default_string()),
     Hdrs = [
-        {'Content-Length', integer_to_list(size(Body))},
-        {'Host', "localhost"}
-    ],
+	    {<<"Content-Length">>, integer_to_list(size(Body))},
+	    {<<"Host">>, <<"localhost">>}
+	   ],
     {ok, Response} = lhttpc:request(URL, "POST", Hdrs, Body, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
