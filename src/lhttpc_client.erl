@@ -529,7 +529,7 @@ check_send_result(State, Error) ->
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
                             request_headers = ReqHdrs, cookies = Cookies} = State) ->
     case lhttpc_protocol:recv(Socket, Ssl) of
-	{_Vsn, <<$1,_,_>>, _Reason, _Hdrs, _Body} ->
+	{_Vsn, <<$1,_,_>>, _Reason, _Cookies, _Hdrs, _Body} ->
 	    %% RFC 2616, section 10.1:
             %% A client MUST be prepared to accept one or more
             %% 1xx status responses prior to a regular
@@ -537,11 +537,11 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             %% 100 (Continue) status message. Unexpected 1xx
             %% status responses MAY be ignored by a user agent.
             read_response(State);
-	{Vsn, Status, Reason, NewHdrs, Body} ->
+	{Vsn, Status, Reason, NewCookies, NewHdrs, Body} ->
 	    FinalCookies =
 		case UseCookies of
 		    true ->
-			lhttpc_lib:update_cookies(NewHdrs, Cookies);
+			lhttpc_lib:update_cookies(NewCookies, Cookies);
 		    _ ->
 			[]
 		end,

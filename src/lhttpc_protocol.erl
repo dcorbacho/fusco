@@ -141,11 +141,15 @@ decode_header_value(<<>>, H, V, State) ->
 	    {error, Reason}
     end;
 decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
-    decode_header(Rest, <<>>, State#state{cookies = [{H, V} | State#state.cookies]});
+    decode_header(Rest, <<>>, State#state{cookies = [{H, decode_cookie(V)}
+						     | State#state.cookies],
+					  headers = [{H, V} | State#state.headers]});
 decode_header_value(<<$\n, Rest/bits>>, H, V, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
 decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
-    decode_header(Rest, <<>>, State#state{cookies = [{H, V} | State#state.cookies]});
+    decode_header(Rest, <<>>, State#state{cookies = [{H, decode_cookie(V)}
+						     | State#state.cookies],
+					  headers = [{H, V} | State#state.headers]});
 decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
 decode_header_value(<<C, Rest/bits>>, H, V, State) ->
@@ -253,7 +257,7 @@ decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
     decode_cookie_av_value(Rest, Co, AV, <<Value/binary, C>>).
 
 decode_body(Rest, State) ->
-    {State#state.version, State#state.status_code, State#state.reason, lists:append(State#state.cookies, State#state.headers), Rest}.
+    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, Rest}.
 
 max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.

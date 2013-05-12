@@ -39,7 +39,6 @@
          maybe_atom_to_list/1,
          format_hdrs/1,
          dec/1,
-         get_cookies/1,
          update_cookies/2,
          to_lower/1,
 	 get_value/2,
@@ -167,27 +166,18 @@ format_hdrs(Headers) ->
     format_hdrs(NormalizedHeaders, []).
 
 %%------------------------------------------------------------------------------
-%% @doc From a list of headers returned by the server, it returns a list of
-%% cookie records, one record for each set-cookie line on the headers.
-%% @end
-%%------------------------------------------------------------------------------
--spec get_cookies(headers()) -> [#lhttpc_cookie{}].
-get_cookies(Hdrs) ->
-    get_cookies(Hdrs, []).
-
-get_cookies([{<<"set-cookie">>, _} = C | T], Acc) ->
-    get_cookies(T, [C | Acc]);
-get_cookies(_, Acc) ->
-    Acc.
-
-%%------------------------------------------------------------------------------
 %% @private
 %% @doc Updated the state of the cookies. after we receive a response.
 %% @end
 %%------------------------------------------------------------------------------
 -spec update_cookies(headers(), [#lhttpc_cookie{}]) -> [#lhttpc_cookie{}].
-update_cookies(RespHeaders, StateCookies) ->
-    ReceivedCookies = lhttpc_lib:get_cookies(RespHeaders),
+update_cookies([], []) ->
+    [];
+update_cookies([], StateCookies) ->
+    delete_expired_cookies(StateCookies);
+update_cookies(ReceivedCookies, []) ->
+    delete_expired_cookies(ReceivedCookies);
+update_cookies(ReceivedCookies, StateCookies) ->
     %% substitute the cookies with the same name, add the others, delete.
     Substituted =
     	lists:foldl(fun(X = #lhttpc_cookie{value = <<"deleted">>}, Acc) ->
@@ -370,10 +360,13 @@ get_value(Key, List, Default) ->
 %% @private
 %%------------------------------------------------------------------------------
 -spec delete_expired_cookies([#lhttpc_cookie{}]) -> [#lhttpc_cookie{}].
+delete_expired_cookies([]) ->
+    [];
 delete_expired_cookies(Cookies) ->
     [ X || X <- Cookies, not expires(X)].
 
-
+expires(#lhttpc_cookie{value = <<"deleted">>}) ->
+    true;
 expires(#lhttpc_cookie{max_age = Max,
 		       timestamp = T}) when Max =/= undefined ->
     timer:now_diff(os:timestamp(), T) > Max;
