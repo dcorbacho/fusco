@@ -44,9 +44,10 @@
          to_lower/1,
 	 get_value/2,
 	 get_value/3,
-	 compare_strings/2,
-	 is_chunked/1,
-	 host_header/2]).
+	 host_header/2,
+	 is_close/1,
+	 is_keep_alive/1,
+	 is_chunked/1]).
 
 -include("lhttpc_types.hrl").
 -include("lhttpc.hrl").
@@ -142,7 +143,7 @@ parse_url(URL) ->
                      boolean(), {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
 format_request(Path, Method, Hdrs, Host, Body, PartialUpload, Cookies) ->
     AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, PartialUpload, Cookies),
-    IsChunked = is_chunked(AllHdrs),
+    IsChunked = is_chunked_transfer(AllHdrs),
     {IsChunked, [Method, " ", Path, " HTTP/1.1", ?HTTP_LINE_END, format_hdrs(AllHdrs),
      format_body(Body, IsChunked)]}.
 
@@ -208,18 +209,128 @@ update_cookies(RespHeaders, StateCookies) ->
 to_lower(String) ->
     [char_to_lower(X) || X <- String].
 
-compare_strings(<<>>, []) ->
+%%------------------------------------------------------------------------------
+%% @doc Compares header values to pre-defined values
+%% Faster than string:to_lower and then compare
+%% @end
+%%------------------------------------------------------------------------------
+is_close(<<"close">>) ->
     true;
-compare_strings(<<C, Rest1/bits>>, [C | Rest2]) ->
-    compare_strings(Rest1, Rest2);
-compare_strings(<<C1, Rest1/bits>>, [C2 | Rest2]) ->
-    case char_to_lower(C1) == C2 of
+is_close(<<"Close">>) ->
+    true;
+is_close(<<"keep-alive">>) ->
+    false;
+is_close(<<"Keep-Alive">>) ->
+    false;
+is_close(C) ->
+    is_close(C, "close").
+
+is_close(<<C, Rest1/bits>>, [C | Rest2]) ->
+    is_close(Rest1, Rest2);
+is_close(<<C1, Rest1/bits>>, [C2 | Rest2]) ->
+    case close_to_lower(C1) == C2 of
 	true ->
-	    compare_strings(Rest1, Rest2);
+	    is_close(Rest1, Rest2);
 	false ->
 	    false
-    end.
+    end;
+is_close(<<>>, _) ->
+    false;
+is_close(_, []) ->
+    false.
 
+close_to_lower($C) ->
+    $c;
+close_to_lower($L) ->
+    $l;
+close_to_lower($O) ->
+    $o;
+close_to_lower($S) ->
+    $s;
+close_to_lower($E) ->
+    $e;
+close_to_lower(C) ->
+    C.
+
+is_keep_alive(<<"close">>) ->
+    false;
+is_keep_alive(<<"Close">>) ->
+    false;
+is_keep_alive(<<"keep-alive">>) ->
+    true;
+is_keep_alive(<<"Keep-Alive">>) ->
+    true;
+is_keep_alive(C) ->
+    is_keep_alive(C, "keep-alive").
+
+is_keep_alive(<<C, Rest1/bits>>, [C | Rest2]) ->
+    is_keep_alive(Rest1, Rest2);
+is_keep_alive(<<C1, Rest1/bits>>, [C2 | Rest2]) ->
+    case keep_to_lower(C1) == C2 of
+	true ->
+	    is_keep_alive(Rest1, Rest2);
+	false ->
+	    false
+    end;
+is_keep_alive(<<>>, _) ->
+    false;
+is_keep_alive(_, []) ->
+    false.
+
+keep_to_lower($K) ->
+    $k;
+keep_to_lower($E) ->
+    $e;
+keep_to_lower($P) ->
+    $p;
+keep_to_lower($A) ->
+    $a;
+keep_to_lower($L) ->
+    $l;
+keep_to_lower($I) ->
+    $i;
+keep_to_lower($V) ->
+    $v;
+keep_to_lower(C) ->
+    C.
+
+is_chunked(<<"Chunked">>) ->
+    true;
+is_chunked(<<"chunked">>) ->
+    true;
+is_chunked(C) ->
+    is_chunked(C, "chunked").
+
+is_chunked(<<C, Rest1/bits>>, [C | Rest2]) ->
+    is_chunked(Rest1, Rest2);
+is_chunked(<<C1, Rest1/bits>>, [C2 | Rest2]) ->
+    case chunked_to_lower(C1) == C2 of
+	true ->
+	    is_chunked(Rest1, Rest2);
+	false ->
+	    false
+    end;
+is_chunked(<<>>, _) ->
+    false;
+is_chunked(_, []) ->
+    false.
+
+chunked_to_lower($C) ->
+    $c;
+chunked_to_lower($H) ->
+    $h;
+chunked_to_lower($U) ->
+    $u;
+chunked_to_lower($N) ->
+    $n;
+chunked_to_lower($K) ->
+    $k;
+chunked_to_lower($E) ->
+    $e;
+chunked_to_lower($D) ->
+    $d;
+chunked_to_lower(C) ->
+    C.
 %%------------------------------------------------------------------------------
 %% @doc Gets value from tuple list
 %% @end
@@ -498,7 +609,7 @@ add_content_headers(Hdrs, _Body, true) ->
         {undefined, undefined} ->
             [{<<"Transfer-Encoding">>, <<"chunked">>} | Hdrs];
         {undefined, TransferEncoding} ->
-	    case compare_strings(TransferEncoding, "chunked") of
+	    case is_chunked_transfer(TransferEncoding) of
 		true -> Hdrs;
                 false -> erlang:error({error, unsupported_transfer_encoding})
             end;
@@ -528,8 +639,13 @@ add_host(Hdrs, Host) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec is_chunked(headers()) -> boolean().
-is_chunked(Hdrs) ->
-    compare_strings(header_value(<<"transfer-encoding">>, Hdrs, <<"undefined">>), "chunked").
+is_chunked_transfer(Hdrs) ->
+    case lists:keyfind(<<"transfer-encoding">>, 1, Hdrs) of
+	false ->
+	    false;
+	{_, Value} ->
+	    is_chunked(Value)
+    end.
 
 %%------------------------------------------------------------------------------
 %% @doc
