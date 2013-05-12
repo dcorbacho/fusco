@@ -39,6 +39,7 @@
 -export([start_link/2,
          start/2,
          request/7,
+	 request/14,
          send_body_part/3,
          send_trailers/3,
          get_body_part/2,
@@ -89,7 +90,8 @@
                                     'undefined' | 'chunked' | 'infinite',
         proxy :: undefined | #lhttpc_url{},
         proxy_ssl_options = [] :: [any()],
-        proxy_setup = false :: boolean()
+        proxy_setup = false :: boolean(),
+	host_header
         }).
 
 %%==============================================================================
@@ -130,6 +132,13 @@ request(Client, Path, Method, Hdrs, Body, Options, Timeout) ->
     gen_server:call(Client,
                     {request, Path, Method, Hdrs, Body, Options}, Timeout).
 
+request(Client, Path, Method, Hdrs, Body, PartialUpload,
+	PartialDownload, ProxyInfo, SendRetry, WindowSize, RecvProc,
+	PartSize, ProxySsl, Timeout) ->
+    gen_server:call(Client, {request, Path, Method, Hdrs, Body, PartialUpload,
+			     PartialDownload, ProxyInfo, SendRetry, WindowSize, RecvProc,
+			     PartSize, ProxySsl}, Timeout).
+
 %%%===================================================================
 %%% gen_server callbacks
 %%%===================================================================
@@ -151,7 +160,8 @@ init({Destination, Options}) ->
                           connect_timeout = ConnectTimeout,
                           connect_options = ConnectOptions,
                           use_cookies = UseCookies,
-                          pool_options = PoolOptions},
+                          pool_options = PoolOptions,
+			  host_header = lhttpc_lib:host_header(Host, Port)},
     %% Get a socket for the pool or exit
     case connect_socket(State) of
         {ok, NewState} ->
@@ -166,8 +176,43 @@ init({Destination, Options}) ->
 %% socket used is new, it also makes the pool gen_server its controlling process.
 %% @end
 %%------------------------------------------------------------------------------
+handle_call({request, Path, Method, Hdrs, Body, PartialUpload, PartialDownload,
+	     ProxyInfo, SendRetry, WindowSize, RecvProc, PartSize, ProxySsl}, From,
+            State = #client_state{ssl = Ssl, host_header = Host,
+                                  socket = Socket, cookies = Cookies,
+                                  use_cookies = UseCookies}) ->
+    Proxy = case ProxyInfo of
+		false ->
+		    undefined;
+		{proxy, ProxyUrl} when is_list(ProxyUrl), not Ssl ->
+		    %% The point of HTTP CONNECT proxying is to use TLS tunneled in
+		    %% a plain HTTP/1.1 connection to the proxy (RFC2817).
+		    throw(origin_server_not_https);
+		{proxy, ProxyUrl} when is_list(ProxyUrl) ->
+		    lhttpc_lib:parse_url(ProxyUrl)
+	    end,
+    {ChunkedUpload, Request} =
+	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, PartialUpload,
+				  {UseCookies, Cookies}),
+    NewState =
+	State#client_state{
+	  method = Method,
+	  request = Request,
+	  requester = From,
+	  request_headers = Hdrs,
+	  attempts = SendRetry,
+	  partial_upload = PartialUpload,
+	  chunked_upload = ChunkedUpload,
+	  partial_download = PartialDownload,
+	  download_window = WindowSize,
+	  download_proc = RecvProc,
+	  part_size = PartSize,
+	  proxy = Proxy,
+	  proxy_setup = (Socket /= undefined),
+	  proxy_ssl_options = ProxySsl},
+    send_request(NewState);
 handle_call({request, Path, Method, Hdrs, Body, Options}, From,
-            State = #client_state{ssl = Ssl, host = Host, port = Port,
+            State = #client_state{ssl = Ssl, host_header = Host,
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
     PartialUpload = lhttpc_lib:get_value(partial_upload, Options, false),
@@ -184,7 +229,7 @@ handle_call({request, Path, Method, Hdrs, Body, Options}, From,
 		    lhttpc_lib:parse_url(ProxyUrl)
 	    end,
     {ChunkedUpload, Request} =
-	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Port, Body, PartialUpload,
+	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, PartialUpload,
 				  {UseCookies, Cookies}),
     NewState =
 	State#client_state{

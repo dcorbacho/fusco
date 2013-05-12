@@ -192,6 +192,14 @@ request_client(Client, Path, Method, Hdrs, Body, Timeout) ->
 %%------------------------------------------------------------------------------
 -spec request_client(pid(), string(), method(), headers(), iodata(),
                      pos_timeout(), options()) -> result().
+request_client(Client, Path, Method, Hdrs, Body, Timeout, []) ->
+    try
+        Reply = lhttpc_client:request(Client, Path, Method, Hdrs, Body, false, false, false, 1, infinity, infinity, infinity, [], Timeout),
+        Reply
+    catch
+        exit:{timeout, _} ->
+            {error, timeout}
+    end;
 request_client(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
     verify_options(Options),
     try

@@ -34,7 +34,7 @@
 -module(lhttpc_lib).
 
 -export([parse_url/1,
-         format_request/8,
+         format_request/7,
          header_value/2, header_value/3,
          maybe_atom_to_list/1,
          format_hdrs/1,
@@ -45,7 +45,8 @@
 	 get_value/2,
 	 get_value/3,
 	 compare_strings/2,
-	 is_chunked/1]).
+	 is_chunked/1,
+	 host_header/2]).
 
 -include("lhttpc_types.hrl").
 -include("lhttpc.hrl").
@@ -131,17 +132,16 @@ parse_url(URL) ->
 %% Method = atom() | string()
 %% Headers = [{atom() | string(), string()}]
 %% Host = string()
-%% Port = integer()
 %% Body = iolist()
 %% PartialUpload = true | false
 %% Cookies = [#lhttpc_cookie{}]
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec format_request(iolist(), method(), headers(), string(), integer(), iolist(),
+-spec format_request(iolist(), method(), headers(), string(),  iolist(),
                      boolean(), {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
-format_request(Path, Method, Hdrs, Host, Port, Body, PartialUpload, Cookies) ->
-    AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Port, Body, PartialUpload, Cookies),
+format_request(Path, Method, Hdrs, Host, Body, PartialUpload, Cookies) ->
+    AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, PartialUpload, Cookies),
     IsChunked = is_chunked(AllHdrs),
     {IsChunked, [Method, " ", Path, " HTTP/1.1", ?HTTP_LINE_END, format_hdrs(AllHdrs),
      format_body(Body, IsChunked)]}.
@@ -419,9 +419,9 @@ format_body(Body, true) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec add_mandatory_hdrs(string(), method(), headers(), host(), port_num(),
+-spec add_mandatory_hdrs(string(), method(), headers(), host(),
                          iolist(), boolean(), {boolean(), [#lhttpc_cookie{}]}) -> headers().
-add_mandatory_hdrs(Path, Method, Hdrs, Host, Port, Body, PartialUpload, {UseCookies, Cookies}) ->
+add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, PartialUpload, {UseCookies, Cookies}) ->
     ContentHdrs = add_content_headers(Method, Hdrs, Body, PartialUpload),
     case UseCookies of
         true ->
@@ -442,7 +442,7 @@ add_mandatory_hdrs(Path, Method, Hdrs, Host, Port, Body, PartialUpload, {UseCook
         _ ->
             FinalHdrs = ContentHdrs
     end,
-    add_host(FinalHdrs, Host, Port).
+    add_host(FinalHdrs, Host).
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -513,11 +513,11 @@ add_content_headers(Hdrs, _Body, true) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec add_host(headers(), host(), port_num()) -> headers().
-add_host(Hdrs, Host, Port) ->
+-spec add_host(headers(), host()) -> headers().
+add_host(Hdrs, Host) ->
     case header_value(<<"host">>, Hdrs) of
         undefined ->
-            [{<<"Host">>, host(Host, Port) } | Hdrs];
+            [{<<"Host">>, Host} | Hdrs];
         _ -> % We have a host
             Hdrs
     end.
@@ -532,16 +532,15 @@ is_chunked(Hdrs) ->
     compare_strings(header_value(<<"transfer-encoding">>, Hdrs, <<"undefined">>), "chunked").
 
 %%------------------------------------------------------------------------------
-%% @private
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec host(host(), port_num()) -> any().
-host(Host, 80)   -> maybe_ipv6_enclose(Host);
+-spec host_header(host(), port_num()) -> any().
+host_header(Host, 80)   -> maybe_ipv6_enclose(Host);
 % When proxying after an HTTP CONNECT session is established, squid doesn't
 % like the :443 suffix in the Host header.
-host(Host, 443)  -> maybe_ipv6_enclose(Host);
-host(Host, Port) -> [maybe_ipv6_enclose(Host), $:, integer_to_list(Port)].
+host_header(Host, 443)  -> maybe_ipv6_enclose(Host);
+host_header(Host, Port) -> [maybe_ipv6_enclose(Host), $:, integer_to_list(Port)].
 
 %%------------------------------------------------------------------------------
 %% @private
