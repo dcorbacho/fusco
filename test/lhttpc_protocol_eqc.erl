@@ -18,9 +18,12 @@ prop_http_response() ->
 		Socket = test_utils:start_listener(Msg),
 		test_utils:send_message(Socket),
 		Recv = lhttpc_protocol:recv(Socket, false),
-		?WHENFAIL(io:format("Response ~p ~s~n", [Recv, binary:list_to_bin(Msg)]),
+		Expected = expected_output(StatusLine, Headers, Body),
+		?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
+				    " ~p~nExpected: ~p~n",
+				    [binary:list_to_bin(Msg), Recv, Expected]),
 			  case Recv of
-			      {_, _, _, _, _, _} ->
+			      Expected ->
 				  true;
 			      _ ->
 				  false
@@ -32,6 +35,11 @@ build_valid_message({HttpVersion, StatusCode, Reason}, Headers, Body) ->
     HS = [[Name, colon(), Value, crlf()] || {Name, Value} <- Headers],
     [SL, HS, crlf(), Body]. 
 
+expected_output({HttpVersion, StatusCode, Reason}, Headers, Body) ->
+    Version = http_version(HttpVersion),
+    LowerHeaders = lists:reverse(headers_to_lower(Headers)),
+    {Version, StatusCode, Reason, [], LowerHeaders, Body}.
+
 colon() ->
     <<$:>>.
 
@@ -40,3 +48,14 @@ sp() ->
 
 crlf() ->
     <<$\r,$\n>>.
+
+http_version(<<"HTTP/1.1">>) ->
+    {1, 1};
+http_version(<<"HTTP/1.0">>) ->
+    {1, 0}.
+
+headers_to_lower(Headers) ->
+    [{to_lower(H), V} || {H, V} <- Headers].
+
+to_lower(Bin) ->
+    list_to_binary(string:to_lower(binary_to_list(Bin))).
