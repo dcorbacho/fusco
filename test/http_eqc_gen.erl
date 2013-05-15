@@ -106,6 +106,91 @@ server_error_code() ->
      {<<"504">>, <<"Gateway Time-out">>},
      {<<"505">>, <<"HTTP Version not supported">>}].
 
+%% RFC 6265
+set_cookie() ->
+    [{<<"Set-Cookie">>, set_cookie_string()}].
+
+set_cookie_string() ->
+    {cookie_pair(), cookie_avs()}.
+
+cookie_pair() ->
+    {small_valid_bin(), small_valid_bin()}.
+
+cookie_avs() ->
+    list(oneof(cookie_av())).
+
+cookie_av() ->
+    [{<<"Expires">>, sane_cookie_date()},
+     {<<"Max-Age">>, max_age()},
+     {<<"Domain">>, small_valid_bin()},
+     {<<"Path">>, small_valid_bin()},
+     {<<"Secure">>, small_valid_bin()},
+     <<"HttpOnly">>,
+     small_valid_bin() %% extension
+    ].
+
+sane_cookie_date() ->
+    ?LET(Date, oneof([rfc1123date(), rfc850date(), asctimedate()]), Date).
+
+max_age() ->
+    ?SUCHTHAT(Age, nat(), Age > 0).
+
+rfc1123date() ->
+    ?LET({Wkday, Date1, Time}, {wkday(), date1(), timeb()},
+ 	 <<Wkday, $,, $\s, Date1, $\s, Time, $\s, "GMT">>).
+
+rfc850date() ->
+    ?LET({Weekday, Date2, Time}, {weekday(), date2(), timeb()},
+ 	 <<Weekday, $,, $\s, Date2, $\s, Time, $\s, "GMT">>).	 
+
+asctimedate() ->
+    ?LET({Wkday, Date3, Time, Year}, {wkday(), date3(), timeb(), year4()},
+	 <<Wkday, $\s, Date3, $\s, Time, $\s, Year>>).
+
+date1() ->
+    ?LET({Day, Month, Year},
+	 {day(), month(), year4()},
+	 <<Day, $\s, Month, $\s, Year>>).
+
+date2() ->
+    ?LET({Day, Month, Year},
+	 {day(), month(), year2()},
+	 <<Day, $-, Month, $-, Year>>).    
+
+date3() ->
+    ?LET({Day, Month}, {day(), month()}, <<Month, $\s, Day>>).
+
+timeb() ->
+    ?LET({H, M, S}, {choose(0, 23), choose(0,59), choose(0, 59)},
+	 begin
+	     HH = twod(H),
+	     MM = twod(M),
+	     SS = twod(S),
+	     <<HH, $:, MM, $:, SS>>
+	 end).
+
+twod(Integer) ->
+    string:right(integer_to_list(Integer), 2, $0).
+
+day() ->
+    ?LET(Day, choose(1, 31), twod(Day)).
+
+year4() ->
+    ?LET(Year, choose(1983, 2083), integer_to_list(Year)).
+
+year2() ->
+    ?LET(Year, choose(0, 99), twod(Year)).
+
+wkday() ->
+    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].
+
+weekday() ->
+    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].
+
+month() ->
+    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
+     "Nov", "Dec"].
+
 status_code() ->
     lists:append([informational_code(), success_code(), redirection_code(),
 		  client_error_code(), server_error_code()]).
