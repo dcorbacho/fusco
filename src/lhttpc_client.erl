@@ -62,8 +62,6 @@
         host :: string(),
         port = 80 :: port_num(),
         ssl = false :: boolean(),
-        pool = undefined,
-        pool_options,
         socket,
         connect_timeout = 'infinity' :: timeout(),
         connect_options = [] :: [any()],
@@ -141,8 +139,6 @@ request(Client, Path, Method, Hdrs, Body, PartialUpload,
 %%% gen_server callbacks
 %%%===================================================================
 init({Destination, Options}) ->
-    PoolOptions = lhttpc_lib:get_value(pool_options, Options, []),
-    Pool = lhttpc_lib:get_value(pool, PoolOptions),
     ConnectTimeout = lhttpc_lib:get_value(connect_timeout, Options, infinity),
     ConnectOptions = lhttpc_lib:get_value(connect_options, Options, []),
     UseCookies = lhttpc_lib:get_value(use_cookies, Options, false),
@@ -154,13 +150,12 @@ init({Destination, Options}) ->
                         is_ssl = S} = lhttpc_lib:parse_url(URL),
             {H, P, S}
     end,
-    State = #client_state{host = Host, port = Port, ssl = Ssl, pool = Pool,
+    State = #client_state{host = Host, port = Port, ssl = Ssl,
                           connect_timeout = ConnectTimeout,
                           connect_options = ConnectOptions,
                           use_cookies = UseCookies,
-                          pool_options = PoolOptions,
 			  host_header = lhttpc_lib:host_header(Host, Port)},
-    %% Get a socket for the pool or exit
+    %% Get a socket or exit
     case connect_socket(State) of
         {ok, NewState} ->
             {ok, NewState};
@@ -170,8 +165,7 @@ init({Destination, Options}) ->
 
 %%------------------------------------------------------------------------------
 %% @doc This function fills in the Client record used in the requests and obtains
-%% the socket from an existing pool or creates a new pool if needed. If the
-%% socket used is new, it also makes the pool gen_server its controlling process.
+%% the socket.
 %% @end
 %%------------------------------------------------------------------------------
 handle_call({request, Path, Method, Hdrs, Body, PartialUpload, PartialDownload,
@@ -326,23 +320,14 @@ handle_info(_Info, State) ->
 %% @spec terminate(Reason, State) -> void()
 %% @end
 %%--------------------------------------------------------------------
-terminate(_Reason, State = #client_state{pool = Pool, host = Host, ssl = Ssl,
-                                         socket = Socket, port = Port}) ->
+terminate(_Reason, #client_state{socket = Socket, ssl = Ssl}) ->
     case Socket of
         undefined ->
             ok;
         _ ->
-            case Pool of
-                undefined ->
-                    close_socket(State),
-                    ok;
-                _ ->
-                    %return the control of the socket to the pool.
-                    lhttpc_manager:client_done(Pool, Host, Port, Ssl, Socket)
-            end
+	    lhttpc_sock:close(Socket, Ssl),
+	    ok
     end.
-
-
 
 %%--------------------------------------------------------------------
 %% @private
@@ -408,11 +393,11 @@ send_request(#client_state{proxy = #lhttpc_url{}, proxy_setup = false,
             {Reply, NewState} = read_proxy_connect_response(State, nil, nil),
             {reply, Reply, NewState};
         {error, closed} ->
-            close_socket(State),
+            lhttpc_sock:close(Socket, Ssl),
             {reply, {error, proxy_connection_closed},
              State#client_state{socket = undefined, request = undefined}};
         {error, _Reason} ->
-            close_socket(State),
+            lhttpc_sock:close(Socket, Ssl),
             {reply, {error, proxy_connection_closed},
              State#client_state{socket = undefined, request = undefined}}
     end;
@@ -429,10 +414,10 @@ send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
                     read_response(State)
             end;
         {error, closed} ->
-            close_socket(State),
+            lhttpc_sock:close(Socket, Ssl),
             send_request(State#client_state{socket = undefined, attempts = Attempts - 1});
         {error, _Reason} ->
-            close_socket(State),
+            lhttpc_sock:close(Socket, Ssl),
             {reply, {error, connection_closed}, State#client_state{socket = undefined,
                                                                    request = undefined}}
     end.
@@ -473,14 +458,14 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
                 {ok, SslSocket} ->
                     State#client_state{socket = SslSocket, proxy_setup = true};
                 {error, Reason} ->
-                    close_socket(State),
+                    lhttpc_sock:close(State#client_state.socket, State#client_state.ssl),
                     {{error, {proxy_connection_failed, Reason}}, State}
             end,
             send_request(State2);
         {ok, http_eoh} ->
             {{error, {proxy_connection_refused, StatusCode, StatusText}}, State};
         {error, closed} ->
-            close_socket(State),
+            lhttpc_sock:close(Socket, ProxyIsSsl),
             {{error, proxy_connection_closed},
              State#client_state{socket = undefined, request = undefined}};
         {error, Reason} ->
@@ -517,7 +502,7 @@ encode_body_part(#client_state{chunked_upload = false}, Data) ->
 check_send_result(State, ok) ->
     {ok, State};
 check_send_result(State, Error) ->
-    close_socket(State),
+    lhttpc_sock:close(State#client_state.socket, State#client_state.ssl),
     {Error, State#client_state{socket = undefined, request = undefined}}.
 
 %%------------------------------------------------------------------------------
@@ -558,10 +543,10 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             % the request on the wire or the server has some isses and is
             % closing connections without sending responses.
             % If this the first attempt to send the request, we will try again.
-            close_socket(State),
+            lhttpc_sock:close(Socket, Ssl),
             send_request(State#client_state{socket = undefined});
 	{error, Reason} ->
-	    close_socket(State),
+	    lhttpc_sock:close(Socket, Ssl),
 	    {reply, {error, Reason}, State#client_state{socket = undefined}}
     end.
 
@@ -597,7 +582,7 @@ read_partial_finite_body(State, ContentLength, Window) when Window > 0->
             read_partial_finite_body(State, Length, lhttpc_lib:dec(Window));
         {error, Reason} ->
             State#client_state.download_proc ! {body_part_error, Reason},
-            close_socket(State),
+            lhttpc_sock:close(State#client_state.socket, State#client_state.ssl),
             State#client_state{request = undefined, socket = undefined}
     end.
 
@@ -812,7 +797,7 @@ maybe_close_socket(#client_state{socket = Socket} = State, {1, Minor},
 		       end,
     if
         ClientConnection orelse ServerConnection ->
-            close_socket(State),
+            lhttpc_sock:close(Socket, State#client_state.ssl),
             undefined;
         (not ClientConnection) andalso (not ServerConnection) ->
             Socket
@@ -832,7 +817,7 @@ maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, RespHdrs)
 		       end,
     if
         ClientConnection orelse (not ServerConnection) ->
-            close_socket(State),
+            lhttpc_sock:close(Socket, State#client_state.ssl),
             undefined;
         (not ClientConnection) andalso ServerConnection ->
             Socket
@@ -866,32 +851,15 @@ is_ipv6_host(Host) ->
 % What about the timeout?
 %%------------------------------------------------------------------------------
 %% @private
-%% @doc If we are using a pool, it takes the socket from the pool if it exist,
-%% otherwise it creates a new socket. If we are not using pool, it just creates
-%% a new socket. If the option pool_ensure its set to true, it creates a
-%% pool dinamically.
+%% Creates a new socket.
 %% @end
 %%------------------------------------------------------------------------------
-connect_socket(#client_state{pool = undefined} = State) ->
-    connect_socket_return(new_socket(State), State);
-connect_socket(#client_state{pool = _Pool} = State) ->
-    connect_socket_return(connect_pool(State), State).
-
-connect_socket_return({ok, Socket}, State) ->
-    {ok, State#client_state{socket = Socket}};
-connect_socket_return(Error, State) ->
-    {Error, State}.
-
--spec connect_pool(#client_state{}) -> {ok, socket()} | {error, atom()}.
-connect_pool(State = #client_state{pool_options = Options,
-                                   pool = Pool}) ->
-    {Host, Port, Ssl} = request_first_destination(State),
-    case lhttpc_manager:ensure_call(Pool, self(), Host, Port, Ssl, Options) of
-        {ok, no_socket} ->
-            %% ensure_call does not open a socket if the pool doesnt have one
-            new_socket(State);
-        Reply ->
-            Reply
+connect_socket(State) ->
+    case new_socket(State) of
+	{ok, Socket} ->
+	    {ok, State#client_state{socket = Socket}};
+	Error ->
+	    {Error, State}
     end.
 
 %%------------------------------------------------------------------------------
@@ -930,15 +898,4 @@ new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOpt
             error_logger:error_msg("Socket connection error: ~p ~p, ~p",
                                    [Type, Error, erlang:get_stacktrace()]),
             {error, connection_error}
-    end.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-close_socket(_State = #client_state{socket = Socket, pool = Pool, ssl = Ssl}) ->
-    case Pool of
-        undefined ->
-            lhttpc_sock:close(Socket, Ssl);
-        _ ->
-            lhttpc_manager:close_socket(Pool, Socket)
     end.

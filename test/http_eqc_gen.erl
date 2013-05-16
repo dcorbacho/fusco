@@ -195,3 +195,7 @@ status_line() ->
 small_valid_bin() ->
     ?LET(String, vector(5, choose($A, $z)),
 	 list_to_binary(String)).
+
+body() ->
+    ?LET(String, list(choose($A, $z)),
+	 list_to_binary(String)).

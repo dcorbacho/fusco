@@ -14,7 +14,7 @@
 prop_http_response() ->
     ?FORALL({StatusLine, Headers, Cookies, Body},
 	    {http_eqc_gen:status_line(), http_eqc_gen:headers(),
-	     non_empty(list(http_eqc_gen:set_cookie())), http_eqc_gen:small_valid_bin()},
+	     list(http_eqc_gen:set_cookie()), http_eqc_gen:body()},
 	    begin
 		Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
 		L = {_, _, Socket} = test_utils:start_listener(Msg),

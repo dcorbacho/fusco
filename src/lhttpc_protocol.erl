@@ -67,6 +67,11 @@ decode_header(<<$:, Rest/bits>>, Header, State) ->
     decode_header_value_ws(Rest, Header, State);
 decode_header(<<$\n, Rest/bits>>, <<>>, State) ->
     decode_body(Rest, State);
+decode_header(<<$\r,$\n, Rest/bits>>, <<>>,
+	      State = #state{status_code = <<$1, _, _>>,
+			     headers = []}) ->
+    decode_status_line(Rest, #state{socket = State#state.socket,
+				    ssl = State#state.ssl});
 decode_header(<<$\r, $\n, Rest/bits>>, <<>>, State) ->
     decode_body(Rest, State);
 decode_header(<<$\r, $\n, _Rest/bits>>, _, _State) ->

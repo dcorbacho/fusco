@@ -33,15 +33,10 @@
 %%% @end
 %%------------------------------------------------------------------------------
 -module(lhttpc).
--behaviour(application).
 
--export([start/0, stop/0, start/2, stop/1,
-         request/4, request/5, request/6, request/9,
-         request_client/5, request_client/6, request_client/7,
-         add_pool/1, add_pool/2, add_pool/3,
-         delete_pool/1,
-         connect_client/2,
-         disconnect_client/1,
+-export([request/5, request/6, request/7,
+         connect/2,
+         disconnect/1,
          send_body_part/2, send_body_part/3,
          send_trailers/2, send_trailers/3,
          get_body_part/1, get_body_part/2]).
@@ -52,106 +47,13 @@
 %%==============================================================================
 %% Exported functions
 %%==============================================================================
-
-%%------------------------------------------------------------------------------
-%% @hidden
-%%------------------------------------------------------------------------------
--spec start(normal | {takeover, node()} | {failover, node()}, any()) -> {ok, pid()}.
-start(_, _) ->
-    lhttpc_sup:start_link().
-
-%%------------------------------------------------------------------------------
-%% @hidden
-%%------------------------------------------------------------------------------
--spec stop(any()) -> ok.
-stop(_) ->
-    ok.
-
-
-%%------------------------------------------------------------------------------
-%% @spec () -> ok | {error, Reason}
-%%   Reason = term()
-%% @doc Start the application.
-%% This is a helper function that will call `application:start(lhttpc)' to
-%% allow the library to be started using the `-s' flag.
-%% For instance:
-%% `$ erl -s crypto -s ssl -s lhttpc'
-%%
-%% For more info on possible return values the `application' module.
-%% @end
-%%------------------------------------------------------------------------------
--spec start() -> ok | {error, any()}.
-start() ->
-    application:start(lhttpc).
-
-%%------------------------------------------------------------------------------
-%% @spec () -> ok | {error, Reason}
-%%   Reason = term()
-%% @doc Stops the application.
-%% This is a helper function that will call `application:stop(lhttpc)'.
-%%
-%% For more info on possible return values the `application' module.
-%% @end
-%%------------------------------------------------------------------------------
--spec stop() -> ok | {error, any()}.
-stop() ->
-    application:stop(lhttpc).
-
-%%------------------------------------------------------------------------------
-%% @spec (Name) -> {ok, Pid} | {error, Reason}
-%%   Name = atom()
-%%   Pid = pid()
-%%   Reason = term()
-%% @doc Add a new named httpc_manager pool to the supervisor tree
-%% @end
-%%------------------------------------------------------------------------------
--spec add_pool(atom()) -> {ok, pid()} | {error, term()}.
-add_pool(Name) when is_atom(Name) ->
-    {ok, ConnTimeout} = application:get_env(lhttpc, connection_timeout),
-    {ok, PoolSize} = application:get_env(lhttpc, pool_size),
-    add_pool(Name, ConnTimeout, PoolSize).
-
-%%------------------------------------------------------------------------------
-%% @doc Add a new httpc_manager to the supervisor tree
-%% @end
-%%------------------------------------------------------------------------------
--spec add_pool(atom(), non_neg_integer()) -> {ok, pid()} | {error, term()}.
-add_pool(Name, ConnTimeout) when is_atom(Name), is_integer(ConnTimeout), ConnTimeout > 0 ->
-    {ok, PoolSize} = application:get_env(lhttpc, pool_size),
-    add_pool(Name, ConnTimeout, PoolSize).
-
-%%------------------------------------------------------------------------------
-%% @doc Add a new httpc_manager to the supervisor tree
-%% @end
-%%------------------------------------------------------------------------------
--spec add_pool(atom(), non_neg_integer(), poolsize()) -> {ok, pid()} | {error, term()}.
-add_pool(Name, ConnTimeout, PoolSize) ->
-    lhttpc_manager:new_pool(Name, ConnTimeout, PoolSize).
-
-%%------------------------------------------------------------------------------
-%% @doc Delete a pool
-%% @end
-%%------------------------------------------------------------------------------
--spec delete_pool(atom() | pid()) -> ok.
-delete_pool(PoolPid) when is_pid(PoolPid) ->
-    {registered_name, Name} = erlang:process_info(PoolPid, registered_name),
-    delete_pool(Name);
-delete_pool(PoolName) when is_atom(PoolName) ->
-    case supervisor:terminate_child(lhttpc_sup, PoolName) of
-        ok -> case supervisor:delete_child(lhttpc_sup, PoolName) of
-                ok -> ok;
-                {error, not_found} -> ok
-            end;
-        {error, Reason} -> {error, Reason}
-    end.
-
 %%------------------------------------------------------------------------------
 %% @doc Starts a Client.
 %% @end
 %%------------------------------------------------------------------------------
 %-spec connect( ,options()) -> {ok,Pid} | ignore | {error,Error}.
 % WHICH TIMEOUT TO USE?
-connect_client(Destination, Options) ->
+connect(Destination, Options) ->
     %Gs_Options = ??
     lhttpc_client:start({Destination, Options}, []).
 
@@ -159,8 +61,8 @@ connect_client(Destination, Options) ->
 %% @doc Stops a Client.
 %% @end
 %%------------------------------------------------------------------------------
--spec disconnect_client(pid()) -> ok.
-disconnect_client(Client) ->
+-spec disconnect(pid()) -> ok.
+disconnect(Client) ->
     lhttpc_client:stop(Client).
 
 %REQUESTS USING THE CLIENT
@@ -170,18 +72,18 @@ disconnect_client(Client) ->
 %% It can receive either a URL or a path
 %% @end
 %%------------------------------------------------------------------------------
--spec request_client(pid(), string(), method(), headers(), pos_timeout()) -> result().
-request_client(Client, Path, Method, Hdrs, Timeout) ->
-    request_client(Client, Path, Method, Hdrs, [], Timeout, []).
+-spec request(pid(), string(), method(), headers(), pos_timeout()) -> result().
+request(Client, Path, Method, Hdrs, Timeout) ->
+    request(Client, Path, Method, Hdrs, [], Timeout, []).
 
 %%------------------------------------------------------------------------------
 %% @doc Makes a request using a client already connected.
 %% It can receive either a URL or a path. It allows to add the body.
 %% @end
 %%------------------------------------------------------------------------------
--spec request_client(pid(), string(), method(), headers(), iodata(), pos_timeout()) -> result().
-request_client(Client, Path, Method, Hdrs, Body, Timeout) ->
-    request_client(Client, Path, Method, Hdrs, Body, Timeout, []).
+-spec request(pid(), string(), method(), headers(), iodata(), pos_timeout()) -> result().
+request(Client, Path, Method, Hdrs, Body, Timeout) ->
+    request(Client, Path, Method, Hdrs, Body, Timeout, []).
 
 %%------------------------------------------------------------------------------
 %% @doc Makes a request using a client already connected.
@@ -190,9 +92,9 @@ request_client(Client, Path, Method, Hdrs, Body, Timeout) ->
 %% Authorization must be part of the headers
 %% @end
 %%------------------------------------------------------------------------------
--spec request_client(pid(), string(), method(), headers(), iodata(),
+-spec request(pid(), string(), method(), headers(), iodata(),
                      pos_timeout(), options()) -> result().
-request_client(Client, Path, Method, Hdrs, Body, Timeout, []) ->
+request(Client, Path, Method, Hdrs, Body, Timeout, []) ->
     try
         Reply = lhttpc_client:request(Client, Path, Method, Hdrs, Body, false, false, false, 1, infinity, infinity, infinity, [], Timeout),
         Reply
@@ -200,7 +102,7 @@ request_client(Client, Path, Method, Hdrs, Body, Timeout, []) ->
         exit:{timeout, _} ->
             {error, timeout}
     end;
-request_client(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
+request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
     verify_options(Options),
     try
         Reply = lhttpc_client:request(Client, Path, Method, Hdrs, Body, Options, Timeout),
@@ -209,114 +111,6 @@ request_client(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
         exit:{timeout, _} ->
             {error, timeout}
     end.
-
-%%------------------------------------------------------------------------------
-%% @spec (URL, Method, Hdrs, Timeout) -> Result
-%%   URL = string()
-%%   Method = string() | atom()
-%%   Hdrs = [{Header, Value}]
-%%   Header = string() | binary() | atom()
-%%   Value = string() | binary()
-%%   Timeout = integer() | infinity
-%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
-%%            | {error, Reason}
-%%   StatusCode = integer()
-%%   ReasonPhrase = string()
-%%   ResponseBody = binary()
-%%   Reason = connection_closed | connect_timeout | timeout
-%% @doc Sends a request without a body.
-%% Would be the same as calling {@link request/5} with an empty body,
-%% `request(URL, Method, Hdrs, [], Timeout)' or
-%% `request(URL, Method, Hdrs, <<>>, Timeout)'.
-%% @see request/9
-%% @end
-%%------------------------------------------------------------------------------
--spec request(string(), method(), headers(), pos_timeout()) -> result().
-request(URL, Method, Hdrs, Timeout) ->
-    request(URL, Method, Hdrs, [], Timeout, []).
-
-%%------------------------------------------------------------------------------
-%% @spec (URL, Method, Hdrs, RequestBody, Timeout) -> Result
-%%   URL = string()
-%%   Method = string() | atom()
-%%   Hdrs = [{Header, Value}]
-%%   Header = string() | binary() | atom()
-%%   Value = string() | binary()
-%%   RequestBody = iodata()
-%%   Timeout = integer() | infinity
-%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
-%%            | {error, Reason}
-%%   StatusCode = integer()
-%%   ReasonPhrase = string()
-%%   ResponseBody = binary()
-%%   Reason = connection_closed | connect_timeout | timeout
-%% @doc Sends a request with a body.
-%% Would be the same as calling {@link request/6} with no options,
-%% `request(URL, Method, Hdrs, Body, Timeout, [])'.
-%% @see request/9
-%% @end
-%%------------------------------------------------------------------------------
--spec request(string(), method(), headers(), iodata(), pos_timeout()) -> result().
-request(URL, Method, Hdrs, Body, Timeout) ->
-    request(URL, Method, Hdrs, Body, Timeout, []).
-
-%%------------------------------------------------------------------------------
-%% @spec (URL, Method, Hdrs, RequestBody, Timeout, Options) -> Result
-%%   URL = string()
-%%   Method = string() | atom()
-%%   Hdrs = [{Header, Value}]
-%%   Header = string() | binary() | atom()
-%%   Value = string() | binary()
-%%   RequestBody = iodata()
-%%   Timeout = integer() | infinity
-%%   Options = [Option]
-%%   Option = {connect_timeout, Milliseconds | infinity} |
-%%            {connect_options, [ConnectOptions]} |
-%%            {send_retry, integer()} |
-%%            {partial_upload, WindowSize} |
-%%            {partial_download, PartialDownloadOptions} |
-%%            {proxy, ProxyUrl} |
-%%            {proxy_ssl_options, SslOptions} |
-%%            {pool, LhttcPool}
-%%   Milliseconds = integer()
-%%   ConnectOptions = term()
-%%   WindowSize = integer() | infinity
-%%   PartialDownloadOptions = [PartialDownloadOption]
-%%   PartialDowloadOption = {window_size, WindowSize} |
-%%                          {part_size, PartSize}
-%%   ProxyUrl = string()
-%%   SslOptions = [any()]
-%%   LhttcPool = pid() | atom()
-%%   PartSize = integer() | infinity
-%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}} |
-%%            {ok, UploadState} | {error, Reason}
-%%   StatusCode = integer()
-%%   ReasonPhrase = string()
-%%   ResponseBody = binary() | pid() | undefined
-%%   Reason = connection_closed | connect_timeout | timeout
-%% @doc Sends a request with a body.
-%% Would be the same as calling <pre>
-%% #lhttpc_url{host = Host, port = Port, path = Path, is_ssl = Ssl} = lhttpc_lib:parse_url(URL),
-%% request(Host, Port, Path, Ssl, Method, Hdrs, Body, Timeout, Options).
-%% </pre>
-%%
-%% `URL' is expected to be a valid URL:
-%% `scheme://host[:port][/path]'.
-%% @see request/9
-%% @end
-%%------------------------------------------------------------------------------
--spec request(string(), method(), headers(), iodata(), pos_timeout(), options()) -> result().
-request(URL, Method, Hdrs, Body, Timeout, Options) ->
-    #lhttpc_url{host = Host, port = Port, path = Path, is_ssl = Ssl,
-                user = User,password = Passwd} = lhttpc_lib:parse_url(URL),
-    Headers = case User of
-        [] ->
-            Hdrs;
-        _ ->
-            Auth = "Basic " ++ binary_to_list(base64:encode(User ++ ":" ++ Passwd)),
-            lists:keystore("Authorization", 1, Hdrs, {"Authorization", Auth})
-    end,
-    request(Host, Port, Ssl, Path, Method, Headers, Body, Timeout, Options).
 
 %%------------------------------------------------------------------------------
 %% @spec (Host, Port, Ssl, Path, Method, Hdrs, RequestBody, Timeout, Options) ->
@@ -338,8 +132,7 @@ request(URL, Method, Hdrs, Body, Timeout, Options) ->
 %%            {partial_upload, WindowSize} |
 %%            {partial_download, PartialDownloadOptions} |
 %%            {proxy, ProxyUrl} |
-%%            {proxy_ssl_options, SslOptions} |
-%%            {pool, LhttcPool}
+%%            {proxy_ssl_options, SslOptions}
 %%   Milliseconds = integer()
 %%   WindowSize = integer()
 %%   PartialDownloadOptions = [PartialDownloadOption]
@@ -347,7 +140,6 @@ request(URL, Method, Hdrs, Body, Timeout, Options) ->
 %%                          {part_size, PartSize}
 %%   ProxyUrl = string()
 %%   SslOptions = [any()]
-%%   LhttcPool = pid() | atom()
 %%   PartSize = integer() | infinity
 %%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
 %%          | {error, Reason}
@@ -465,26 +257,7 @@ request(URL, Method, Hdrs, Body, Timeout, Options) ->
 %% list of all available options, please check OTP's ssl module manpage.
 %% @end
 %%------------------------------------------------------------------------------
--spec request(string(), port_num(), boolean(), string(), method(),
-              headers(), iodata(), pos_timeout(), options()) -> result().
-request(Host, Port, Ssl, Path, Method, Hdrs, Body, Timeout, Options) ->
-    verify_options(Options),
-    case connect_client({Host, Port, Ssl}, Options) of
-        {ok, Client} ->
-            try
-                Reply = lhttpc_client:request(Client, Path, Method, Hdrs, Body, Options, Timeout),
-                disconnect_client(Client),
-                Reply
-            catch
-                exit:{timeout, _} ->
-                    disconnect_client(Client),
-                    {error, timeout}
-            end;
-        {error, {timeout, _Reason}} ->
-            {error, connection_timeout};
-        {error, _Reason} = Error ->
-            Error
-    end.
+
 
 %%------------------------------------------------------------------------------
 %% @spec (UploadState :: UploadState, BodyPart :: BodyPart) -> Result
@@ -679,34 +452,9 @@ verify_options([{proxy, List} | Options]) when is_list(List) ->
     verify_options(Options);
 verify_options([{proxy_ssl_options, List} | Options]) when is_list(List) ->
     verify_options(Options);
-verify_options([{pool_options, PoolOptions} | Options]) ->
-    ok = verify_pool_options(PoolOptions),
-    verify_options(Options);
 verify_options([Option | _Rest]) ->
     erlang:error({bad_option, Option});
 verify_options([]) ->
-    ok.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
--spec verify_pool_options(pool_options()) -> ok | no_return().
-verify_pool_options([{pool, PidOrName} | Options])
-        when is_pid(PidOrName); is_atom(PidOrName) ->
-    verify_pool_options(Options);
-verify_pool_options([{pool_ensure, Bool} | Options])
-        when is_boolean(Bool) ->
-    verify_pool_options(Options);
-verify_pool_options([{pool_connection_timeout, Size} | Options])
-        when is_integer(Size) ->
-    verify_pool_options(Options);
-verify_pool_options([{pool_max_size, Size} | Options])
-        when is_integer(Size) orelse
-        Size =:= infinity->
-    verify_pool_options(Options);
-verify_pool_options([Option | _Rest]) ->
-    erlang:error({bad_option, Option});
-verify_pool_options([]) ->
     ok.
 
 %%------------------------------------------------------------------------------
