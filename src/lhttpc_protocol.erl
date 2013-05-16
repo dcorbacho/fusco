@@ -232,7 +232,7 @@ decode_cookie_av(<<$T, Rest/bits>>, Co, AV) ->
     decode_cookie_av(Rest, Co, <<AV/binary, $t>>);
 decode_cookie_av(<<$H, Rest/bits>>, Co, AV) ->
     decode_cookie_av(Rest, Co, <<AV/binary, $h>>);
-decode_cookie_av(<<$;, Rest/bits>>, Co, AV) ->
+decode_cookie_av(<<$;, Rest/bits>>, Co, _AV) ->
     decode_cookie_av_ws(Rest, Co);
 decode_cookie_av(<<C, Rest/bits>>, Co, AV) ->
     decode_cookie_av(Rest, Co, <<AV/binary, C>>);
@@ -266,12 +266,12 @@ decode_body(Rest, State) ->
 max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.
 
-%% TODO add support for rfc850-date and asctime-date http://tools.ietf.org/html/rfc2616#section-3.3.1
-%% Currently rfc1123
-expires(<<_,_,_,$,,$\s,Rest/bits>>) ->
-    expires(Rest);
-expires(<<D1,D2,$\s,M1,M2,M3,$\s,Y1,Y2,Y3,Y4,$\s,Rest/bits>>) ->
+%% http://tools.ietf.org/html/rfc2616#section-3.3.1
+expires(<<_,_,_,$,,$\s,D1,D2,$\s,M1,M2,M3,$\s,Y1,Y2,Y3,Y4,$\s,Rest/bits>>) ->
     expires(Rest, {list_to_integer([Y1,Y2,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])});
+expires(<<_,_,_,$\s,Mo1,Mo2,Mo3,$\s,D1,D2,$\s,H1,H2,$:,M1,M2,$:,S1,S2,$\s,Y1,Y2,Y3,Y4,_Rest/bits>>) ->
+    {{list_to_integer([Y1,Y2,Y3,Y4]),month(<<Mo1,Mo2,Mo3>>),list_to_integer([D1,D2])},
+     {list_to_integer([H1,H2]), list_to_integer([M1,M2]), list_to_integer([S1,S2])}};
 expires(<<"Monday",$,,$\s,Rest/bits>>) ->
     expires(Rest);
 expires(<<"Tuesday",$,,$\s,Rest/bits>>) ->
