@@ -239,25 +239,3 @@ parse_url_test_() ->
                         },
                       lhttpc_lib:parse_url("http://www.example.com?a=b"))
     ].
-
-get_cookies_test_() ->
-    [
-     ?_assertEqual(
-	[#lhttpc_cookie{
-	    name = <<"NID">>,
-	    value = <<"67=gWDe_1hs0LbFdFRIiHXh8qQT_oh_2T2e2tPU3su6azclQH0FGbIpkHYkZJ1kIENFScdIWsnaHd3fUL-J8dZ8YApccTTmpfAgxgCStTspaZrCBRLG0SHRiAZz-Lkj8tyk">>,
-	    expires = {{2013, 7, 31}, {10, 31, 52}},
-	    path = <<"/">>,
-	    max_age = undefined,
-	    timestamp = undefined
-	   },
-	 #lhttpc_cookie{
-			 name = <<"PREF">>,
-			 value = <<"ID=d8f03b98b080a98a:FF=0:TM=1359455512:LM=1359455512:S=x-lfwE8swDlcyxXl">>,
-			 expires = {{2015, 1, 29}, {10, 31, 52}},
-			 path = <<"/">>,
-			 max_age = undefined,
-			 timestamp = undefined
-		       }],
-	lhttpc_lib:get_cookies(?HEADER1))
-    ].

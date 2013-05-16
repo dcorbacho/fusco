@@ -28,7 +28,6 @@
 -module(lhttpc_tests).
 
 -export([test_no/2]).
--import(webserver, [start/2, start/3]).
 
 -include_lib("eunit/include/eunit.hrl").
 
@@ -131,7 +130,7 @@ simple_get_ipv6() ->
     simple("GET", inet6).
 
 empty_get() ->
-    Port = start(gen_tcp, [fun webserver_utils:empty_body/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port, "/empty"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
@@ -144,7 +143,7 @@ connection_refused() ->
 basic_auth() ->
     User = "foo",
     Passwd = "bar",
-    Port = start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port, "/empty", User, Passwd),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
@@ -153,7 +152,7 @@ basic_auth() ->
 missing_basic_auth() ->
     User = "foo",
     Passwd = "bar",
-    Port = start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port, "/empty"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
@@ -162,14 +161,14 @@ missing_basic_auth() ->
 wrong_basic_auth() ->
     User = "foo",
     Passwd = "bar",
-    Port = start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port, "/empty", User, "wrong_password"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
     ?assertEqual(<<"wrong_auth">>, body(Response)).
 
 get_with_mandatory_hdrs() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
     URL = url(Port, "/host"),
     Body = list_to_binary(webserver_utils:default_string()),
     Hdrs = [
@@ -181,7 +180,7 @@ get_with_mandatory_hdrs() ->
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 get_with_mandatory_hdrs_by_atoms() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
     URL = url(Port, "/host"),
     Body = list_to_binary(webserver_utils:default_string()),
     Hdrs = [
@@ -193,7 +192,7 @@ get_with_mandatory_hdrs_by_atoms() ->
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 get_with_mandatory_hdrs_by_binaries() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
     URL = url(Port, "/host"),
     Body = list_to_binary(webserver_utils:default_string()),
     Hdrs = [
@@ -205,7 +204,7 @@ get_with_mandatory_hdrs_by_binaries() ->
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 get_with_connect_options() ->
-    Port = start(gen_tcp, [fun webserver_utils:empty_body/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port, "/empty"),
     Options = [{connect_options, [{ip, {127, 0, 0, 1}}, {port, 0}]}],
     {ok, Response} = lhttpc:request(URL, "GET", [], [], 1000, Options),
@@ -213,14 +212,14 @@ get_with_connect_options() ->
     ?assertEqual(<<>>, body(Response)).
 
 no_content_length() ->
-    Port = start(gen_tcp, [fun webserver_utils:no_content_length/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_length/5]),
     URL = url(Port, "/no_cl"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 no_content_length_1_0() ->
-    Port = start(gen_tcp, [fun webserver_utils:no_content_length_1_0/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_length_1_0/5]),
     URL = url(Port, "/no_cl"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
@@ -230,7 +229,7 @@ no_content_length_1_0() ->
 %% which can cause crash in lhttpc_client:body_type when Content-Length
 %% is converted from list to integer
 trailing_space_header() ->
-    Port = start(gen_tcp, [fun webserver_utils:trailing_space_header/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:trailing_space_header/5]),
     URL = url(Port, "/no_cl"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     Headers = headers(Response),
@@ -238,56 +237,56 @@ trailing_space_header() ->
     ?assertEqual("14", ContentLength).
 
 get_not_modified() ->
-    Port = start(gen_tcp, [fun webserver_utils:not_modified_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:not_modified_response/5]),
     URL = url(Port, "/not_modified"),
     {ok, Response} = lhttpc:request(URL, "GET", [], [], 1000),
     ?assertEqual({<<"304">>, <<"Not Modified">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 simple_head() ->
-    Port = start(gen_tcp, [fun webserver_utils:head_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:head_response/5]),
     URL = url(Port, "/HEAD"),
     {ok, Response} = lhttpc:request(URL, "HEAD", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 simple_head_atom() ->
-    Port = start(gen_tcp, [fun webserver_utils:head_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:head_response/5]),
     URL = url(Port, "/head"),
     {ok, Response} = lhttpc:request(URL, "HEAD", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 delete_no_content() ->
-    Port = start(gen_tcp, [fun webserver_utils:no_content_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_response/5]),
     URL = url(Port, "/delete_no_content"),
     {ok, Response} = lhttpc:request(URL, "DELETE", [], 1000),
     ?assertEqual({<<"204">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 delete_content() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
     URL = url(Port, "/delete_content"),
     {ok, Response} = lhttpc:request(URL, "DELETE", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 options_no_content() ->
-    Port = start(gen_tcp, [fun webserver_utils:head_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:head_response/5]),
     URL = url(Port, "/options_no_content"),
     {ok, Response} = lhttpc:request(URL, "OPTIONS", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 options_content() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
     URL = url(Port, "/options_content"),
     {ok, Response} = lhttpc:request(URL, "OPTIONS", [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 server_connection_close() ->
-    Port = start(gen_tcp, [fun webserver_utils:respond_and_close/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:respond_and_close/5]),
     URL = url(Port, "/close"),
     Body = pid_to_list(self()),
     {ok, Response} = lhttpc:request(URL, "PUT", [], Body, 1000),
@@ -296,7 +295,7 @@ server_connection_close() ->
     receive closed -> ok end.
 
 client_connection_close() ->
-    Port = start(gen_tcp, [fun webserver_utils:respond_and_wait/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:respond_and_wait/5]),
     URL = url(Port, "/close"),
     Body = pid_to_list(self()),
     Hdrs = [{"Connection", "close"}],
@@ -305,7 +304,7 @@ client_connection_close() ->
     receive closed -> ok end.
 
 pre_1_1_server_connection() ->
-    Port = start(gen_tcp, [fun webserver_utils:pre_1_1_server/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:pre_1_1_server/5]),
     URL = url(Port, "/close"),
     Body = pid_to_list(self()),
     {ok, _} = lhttpc:request(URL, "PUT", [], Body, 1000),
@@ -315,10 +314,11 @@ pre_1_1_server_connection() ->
     receive closed -> ok end.
 
 pre_1_1_server_keep_alive() ->
-    Port = start(gen_tcp, [
-            fun webserver_utils:pre_1_1_server_keep_alive/5,
-            fun webserver_utils:pre_1_1_server/5
-        ]),
+    {ok, _, _, Port} = webserver:start(gen_tcp,
+				   [
+				    fun webserver_utils:pre_1_1_server_keep_alive/5,
+				    fun webserver_utils:pre_1_1_server/5
+				   ]),
     URL = url(Port, "/close"),
     Body = pid_to_list(self()),
     %this test need to use a client now (or a pool).
@@ -337,7 +337,7 @@ simple_put() ->
     simple("PUT").
 
 post() ->
-    Port = start(gen_tcp, [fun webserver_utils:copy_body/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:copy_body/5]),
     URL = url(Port, "/post"),
     {X, Y, Z} = now(),
     Body = [
@@ -353,7 +353,7 @@ post() ->
     ?assertEqual(iolist_to_binary(Body), body(Response)).
 
 post_100_continue() ->
-    Port = start(gen_tcp, [fun webserver_utils:copy_body_100_continue/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:copy_body_100_continue/5]),
     URL = url(Port, "/post"),
     {X, Y, Z} = now(),
     Body = [
@@ -372,11 +372,12 @@ bad_url() ->
     ?assertError(_, lhttpc:request(ost, "GET", [], 100)).
 
 persistent_connection() ->
-    Port = start(gen_tcp, [
-            fun webserver_utils:simple_response/5,
-            fun webserver_utils:simple_response/5,
-            fun webserver_utils:copy_body/5
-        ]),
+    {ok, _, _, Port} = webserver:start(gen_tcp,
+				   [
+				    fun webserver_utils:simple_response/5,
+				    fun webserver_utils:simple_response/5,
+				    fun webserver_utils:copy_body/5
+				   ]),
     URL = url(Port, "/persistent"),
     {ok, FirstResponse} = lhttpc:request(URL, "GET", [], [], 1000, [{pool_options, [{pool_ensure, true}, {pool, pool_name}]}]),
     Headers = [{"KeepAlive", "300"}], % shouldn't be needed
@@ -390,12 +391,14 @@ persistent_connection() ->
     ?assertEqual(<<>>, body(ThirdResponse)).
 
 request_timeout() ->
-    Port = start(gen_tcp, [fun webserver_utils:very_slow_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:very_slow_response/5]),
     URL = url(Port, "/slow"),
     ?assertEqual({error, timeout}, lhttpc:request(URL, "GET", [], 50)).
 
 connection_timeout() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp,
+				   [fun webserver_utils:simple_response/5,
+				    fun webserver_utils:simple_response/5]),
     URL = url(Port, "/close_conn"),
     {ok, _PoolManager} = lhttpc:add_pool(lhttpc_manager),
     lhttpc_manager:update_connection_timeout(lhttpc_manager, 50), % very short keep alive
@@ -408,7 +411,7 @@ connection_timeout() ->
     lhttpc_manager:update_connection_timeout(lhttpc_manager, 300000). % set back
 
 suspended_manager() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
     URL = url(Port, "/persistent"),
     {ok, FirstResponse} = lhttpc:request(URL, "GET", [], [], 50, [{pool_options, [{pool_ensure, true}, {pool, lhttpc_manager}]}]),
     ?assertEqual({<<"200">>, <<"OK">>}, status(FirstResponse)),
@@ -424,7 +427,7 @@ suspended_manager() ->
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(SecondResponse)).
 
 chunked_encoding() ->
-    Port = start(gen_tcp, [fun webserver_utils:chunked_response/5, fun webserver_utils:chunked_response_t/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:chunked_response/5, fun webserver_utils:chunked_response_t/5]),
     URL = url(Port, "/chunked"),
     {ok, Client} = lhttpc:connect_client(URL, []),
     {ok, FirstResponse} = lhttpc:request_client(Client, URL, "GET", [], 1000),
@@ -443,7 +446,7 @@ chunked_encoding() ->
             headers(SecondResponse))).
 
 partial_upload_identity() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
     URL = url(Port, "/partial_upload"),
     Body = [<<"This">>, <<" is ">>, <<"chunky">>, <<" stuff!">>],
     Hdrs = [{"Content-Length", integer_to_list(iolist_size(Body))}],
@@ -465,7 +468,7 @@ partial_upload_identity() ->
         lhttpc_lib:header_value("x-test-orig-body", headers(Response2))).
 
 partial_upload_identity_iolist() ->
-    Port = start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5, fun webserver_utils:simple_response/5]),
     URL = url(Port, "/partial_upload"),
     Body = ["This", [<<" ">>, $i, $s, [" "]], <<"chunky">>, [<<" stuff!">>]],
     Hdrs = [{"Content-Length", integer_to_list(iolist_size(Body))}],
@@ -487,7 +490,7 @@ partial_upload_identity_iolist() ->
         lhttpc_lib:header_value("x-test-orig-body", headers(Response2))).
 
 partial_upload_chunked() ->
-    Port = start(gen_tcp, [fun webserver_utils:chunked_upload/5, fun webserver_utils:chunked_upload/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:chunked_upload/5, fun webserver_utils:chunked_upload/5]),
     URL = url(Port, "/partial_upload_chunked"),
     Body = ["This", [<<" ">>, $i, $s, [" "]], <<"chunky">>, [<<" stuff!">>]],
     Options = [{partial_upload, true}],
@@ -515,7 +518,7 @@ partial_upload_chunked() ->
         lhttpc_lib:header_value("x-test-orig-trailer-1", headers(Response2))).
 
 partial_upload_chunked_no_trailer() ->
-    Port = start(gen_tcp, [fun webserver_utils:chunked_upload/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:chunked_upload/5]),
     URL = url(Port, "/partial_upload_chunked_no_trailer"),
     Body = [<<"This">>, <<" is ">>, <<"chunky">>, <<" stuff!">>],
     Options = [{partial_upload, true}],
@@ -539,7 +542,7 @@ long_body_part(Size) ->
     [webserver_utils:long_body_part() || _ <- lists:seq(1, Size)])).
 
 partial_download_identity() ->
-    Port = start(gen_tcp, [fun webserver_utils:large_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:large_response/5]),
     URL = url(Port, "/partial_download_identity"),
     PartialDownload = [
         {window_size, 1},
@@ -555,7 +558,7 @@ partial_download_identity() ->
     ?assertEqual(long_body_part(3), Body).
 
 partial_download_infinity_window() ->
-    Port = start(gen_tcp, [fun webserver_utils:large_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:large_response/5]),
     URL = url(Port, "/partial_download_identity"),
     PartialDownload = [
                {window_size, infinity},
@@ -570,7 +573,7 @@ partial_download_infinity_window() ->
     ?assertEqual(long_body_part(3), Body).
 
 partial_download_no_content_length() ->
-    Port = start(gen_tcp, [fun webserver_utils:no_content_length/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_length/5]),
     URL = url(Port, "/no_cl"),
     PartialDownload = [
                {window_size, 1},
@@ -585,7 +588,7 @@ partial_download_no_content_length() ->
     ?assertEqual(list_to_binary(webserver_utils:default_string()), Body).
 
 partial_download_no_content() ->
-    Port = start(gen_tcp, [fun webserver_utils:no_content_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_response/5]),
     URL = url(Port, "/partial_download_identity"),
     PartialDownload = [
                {window_size, 1},
@@ -599,7 +602,7 @@ partial_download_no_content() ->
     ?assertEqual(undefined, Body).
 
 limited_partial_download_identity() ->
-    Port = start(gen_tcp, [fun webserver_utils:large_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:large_response/5]),
     URL = url(Port, "/partial_download_identity"),
     PartialDownload = [
                {window_size, 1},
@@ -615,7 +618,7 @@ limited_partial_download_identity() ->
     ?assertEqual(long_body_part(3), Body).
 
 partial_download_chunked() ->
-    Port = start(gen_tcp, [fun webserver_utils:large_chunked_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:large_chunked_response/5]),
     URL = url(Port, "/partial_download_identity"),
     PartialDownload = [
                {window_size, 1},
@@ -631,7 +634,7 @@ partial_download_chunked() ->
     ?assertEqual(long_body_part(3), Body).
 
 partial_download_chunked_infinite_part() ->
-    Port = start(gen_tcp, [fun webserver_utils:large_chunked_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:large_chunked_response/5]),
     URL = url(Port, "/partial_download_identity"),
     PartialDownload = [
                {window_size, 1},
@@ -648,7 +651,7 @@ partial_download_chunked_infinite_part() ->
     ?assertEqual(long_body_part(3), Body).
 
 partial_download_smallish_chunks() ->
-    Port = start(gen_tcp, [fun webserver_utils:large_chunked_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:large_chunked_response/5]),
     URL = url(Port, "/partial_download_identity"),
     PartialDownload = [
                {window_size, 1},
@@ -664,7 +667,7 @@ partial_download_smallish_chunks() ->
     ?assertEqual(long_body_part(3), Body).
 
 partial_download_slow_chunks() ->
-    Port = start(gen_tcp, [fun webserver_utils:slow_chunked_response/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:slow_chunked_response/5]),
     URL = url(Port, "/slow"),
     PartialDownload = [
                {window_size, 1},
@@ -680,13 +683,13 @@ partial_download_slow_chunks() ->
     ?assertEqual(long_body_part(2), Body).
 
 close_connection() ->
-    Port = start(gen_tcp, [fun webserver_utils:close_connection/5]),
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:close_connection/5]),
     URL = url(Port, "/close"),
     ?assertEqual({error, closed}, lhttpc:request(URL, "GET", [],
             1000)).
 
 ssl_get() ->
-    Port = start(ssl, [fun webserver_utils:simple_response/5]),
+    {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5]),
     URL = ssl_url(Port, "/simple"),
     {ok, _PoolManager} = lhttpc:add_pool(lhttpc_manager),
     {ok, Response} = lhttpc:request(URL, "GET", [], [], 1000, [{pool_options, [{pool_ensure, true}, {pool, lhttpc_manager}]}]),
@@ -694,14 +697,14 @@ ssl_get() ->
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 ssl_get_ipv6() ->
-    Port = start(ssl, [fun webserver_utils:simple_response/5], inet6),
+    {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5], inet6),
     URL = ssl_url(inet6, Port, "/simple"),
     {ok, Response} = lhttpc:request(URL, "GET", [], [], 1000, [{pool_options, [{pool_ensure, true}, {pool, lhttpc_manager}]}]),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 ssl_post() ->
-    Port = start(ssl, [fun webserver_utils:copy_body/5]),
+    {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:copy_body/5]),
     URL = ssl_url(Port, "/simple"),
     Body = "SSL Test <o/",
     BinaryBody = list_to_binary(Body),
@@ -710,7 +713,7 @@ ssl_post() ->
     ?assertEqual(BinaryBody, body(Response)).
 
 ssl_chunked() ->
-    Port = start(ssl, [fun webserver_utils:chunked_response/5, fun webserver_utils:chunked_response_t/5]),
+    {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:chunked_response/5, fun webserver_utils:chunked_response_t/5]),
     URL = ssl_url(Port, "/ssl_chunked"),
     {ok, Client} = lhttpc:connect_client(URL, []),
     FirstResult = lhttpc:request_client(Client, URL, "GET", [], [], 100, [{pool_options, [{pool_ensure, true}, {pool, lhttpc_manager}]}]),
@@ -744,7 +747,7 @@ invalid_options() ->
             [{foo, bar}, bad_option])).
 
 cookies() ->
-    Port = start(gen_tcp, [fun webserver_utils:set_cookie_response/5, fun webserver_utils:expired_cookie_response/5,
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:set_cookie_response/5, fun webserver_utils:expired_cookie_response/5,
             fun webserver_utils:receive_right_cookies/5]),
     URL = url(Port, "/cookies"),
     Options = [{use_cookies, true}],
@@ -799,11 +802,11 @@ simple(Method) ->
     simple(Method, inet).
 
 simple(Method, Family) ->
-    case start(gen_tcp, [fun webserver_utils:simple_response/5], Family) of
+    case webserver:start(gen_tcp, [fun webserver_utils:simple_response/5], Family) of
         {error, family_not_supported} when Family =:= inet6 ->
             % Localhost has no IPv6 support - not a big issue.
             ?debugMsg("WARNING: impossible to test IPv6 support~n");
-        Port when is_number(Port) ->
+        {ok, _, _, Port} when is_number(Port) ->
             URL = url(Family, Port, "/simple"),
             {ok, Response} = lhttpc:request(URL, Method, [], 1000),
             {StatusCode, ReasonPhrase} = status(Response),
