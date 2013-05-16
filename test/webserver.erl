@@ -40,8 +40,8 @@ start(Module, Responders, Family) ->
     case get_addr("localhost", Family) of
         {ok, Addr} ->
             LS = listen(Module, Addr, Family),
-            spawn_link(?MODULE, accept_connection, [self(), Module, LS, Responders]),
-            port(Module, LS);
+            Pid = spawn_link(?MODULE, accept_connection, [self(), Module, LS, Responders]),
+            {ok, Pid, LS, port(Module, LS)};
         Error ->
             Error
     end.

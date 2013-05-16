@@ -17,9 +17,10 @@ prop_http_response() ->
 	     non_empty(list(http_eqc_gen:set_cookie())), http_eqc_gen:small_valid_bin()},
 	    begin
 		Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
-		Socket = test_utils:start_listener(Msg),
+		L = {_, _, Socket} = test_utils:start_listener(Msg),
 		test_utils:send_message(Socket),
 		Recv = lhttpc_protocol:recv(Socket, false),
+		test_utils:stop_listener(L),
 		Expected = expected_output(StatusLine, Headers, Cookies, Body),
 		?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
 				    " ~p~nExpected: ~p~n",
