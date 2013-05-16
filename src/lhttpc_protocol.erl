@@ -271,7 +271,23 @@ max_age(Value) ->
 expires(<<_,_,_,$,,$\s,Rest/bits>>) ->
     expires(Rest);
 expires(<<D1,D2,$\s,M1,M2,M3,$\s,Y1,Y2,Y3,Y4,$\s,Rest/bits>>) ->
-    expires(Rest, {list_to_integer([Y1,Y2,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])}).
+    expires(Rest, {list_to_integer([Y1,Y2,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])});
+expires(<<"Monday",$,,$\s,Rest/bits>>) ->
+    expires(Rest);
+expires(<<"Tuesday",$,,$\s,Rest/bits>>) ->
+    expires(Rest);
+expires(<<"Wednesday",$,,$\s,Rest/bits>>) ->
+    expires(Rest);
+expires(<<"Thursday",$,,$\s,Rest/bits>>) ->
+    expires(Rest);
+expires(<<"Friday",$,,$\s,Rest/bits>>) ->
+    expires(Rest);
+expires(<<"Saturday",$,,$\s,Rest/bits>>) ->
+    expires(Rest);
+expires(<<"Sunday",$,,$\s,Rest/bits>>) ->
+    expires(Rest);
+expires(<<D1,D2,$\-,M1,M2,M3,$\-,Y3,Y4,$\s,Rest/bits>>) ->
+    expires(Rest, {list_to_integer([$2,$0,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])}).
 
 expires(<<H1,H2,$:,M1,M2,$:,S1,S2,_Rest/bits>>, Date) ->
     {Date, {list_to_integer([H1,H2]), list_to_integer([M1,M2]), list_to_integer([S1,S2])}}.
