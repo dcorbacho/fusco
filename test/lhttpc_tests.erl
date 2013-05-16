@@ -233,8 +233,8 @@ trailing_space_header() ->
     URL = url(Port, "/no_cl"),
     {ok, Response} = lhttpc:request(URL, "GET", [], 1000),
     Headers = headers(Response),
-    ContentLength = lhttpc_lib:header_value("Content-Length", Headers),
-    ?assertEqual("14", ContentLength).
+    ContentLength = lhttpc_lib:header_value(<<"content-length">>, Headers),
+    ?assertEqual(<<"14">>, ContentLength).
 
 get_not_modified() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:not_modified_response/5]),

@@ -17,7 +17,7 @@
 	 decode_cookie/1]).
 
 %% TEST
--export([decode_header_value/4,
+-export([decode_header_value/5,
 	 decode_header/3,
 	 empty_state/0]).
 
@@ -131,29 +131,33 @@ decode_header_value_ws(<<$\s, Rest/bits>>, H, S) ->
 decode_header_value_ws(<<$\t, Rest/bits>>, H, S) ->
     decode_header_value_ws(Rest, H, S);
 decode_header_value_ws(Rest, H, S) ->
-    decode_header_value(Rest, H, <<>>, S).
+    decode_header_value(Rest, H, <<>>, <<>>, S).
 
-decode_header_value(<<>>, H, V, State) ->
+decode_header_value(<<>>, H, V, T, State) ->
     case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
 	{ok, Data} ->
-	    decode_header_value(Data, H, V, State);
+	    decode_header_value(Data, H, V, T, State);
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
+decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, State) ->
     decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
 						     | State#state.cookies],
 					  headers = [{H, V} | State#state.headers]});
-decode_header_value(<<$\n, Rest/bits>>, H, V, State) ->
+decode_header_value(<<$\n, Rest/bits>>, H, V, _T, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
-decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
+decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, State) ->
     decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
 						     | State#state.cookies],
 					  headers = [{H, V} | State#state.headers]});
-decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, State) ->
+decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, _T, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
-decode_header_value(<<C, Rest/bits>>, H, V, State) ->
-    decode_header_value(Rest, H, <<V/binary, C>>, State).
+decode_header_value(<<$\s, Rest/bits>>, H, V, T, State) ->
+    decode_header_value(Rest, H, V, <<T/binary, $\s>>, State);
+decode_header_value(<<$\t, Rest/bits>>, H, V, T, State) ->
+    decode_header_value(Rest, H, V, <<T/binary, $\t>>, State);
+decode_header_value(<<C, Rest/bits>>, H, V, T, State) ->
+    decode_header_value(Rest, H, <<V/binary, T/binary, C>>, <<>>, State).
 
 %% RFC 6265
 %% TODO decode cookie values, this only accepts 'a=b'
