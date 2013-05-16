@@ -108,7 +108,7 @@ server_error_code() ->
 
 %% RFC 6265
 set_cookie() ->
-    [{<<"Set-Cookie">>, set_cookie_string()}].
+    {<<"Set-Cookie">>, set_cookie_string()}.
 
 set_cookie_string() ->
     {cookie_pair(), cookie_avs()}.
@@ -133,41 +133,29 @@ sane_cookie_date() ->
     ?LET(Date, oneof([rfc1123date(), rfc850date(), asctimedate()]), Date).
 
 max_age() ->
-    ?SUCHTHAT(Age, nat(), Age > 0).
+    ?LET(Age, ?SUCHTHAT(Nat, nat(), Nat > 0), list_to_binary(integer_to_list(Age))).
 
 rfc1123date() ->
-    ?LET({Wkday, Date1, Time}, {wkday(), date1(), timeb()},
- 	 <<Wkday, $,, $\s, Date1, $\s, Time, $\s, "GMT">>).
+    {rfc1123date, {wkday(), date1(), timeb()}}.
 
 rfc850date() ->
-    ?LET({Weekday, Date2, Time}, {weekday(), date2(), timeb()},
- 	 <<Weekday, $,, $\s, Date2, $\s, Time, $\s, "GMT">>).	 
+    {rfc850date, {weekday(), date2(), timeb()}}.
 
 asctimedate() ->
-    ?LET({Wkday, Date3, Time, Year}, {wkday(), date3(), timeb(), year4()},
-	 <<Wkday, $\s, Date3, $\s, Time, $\s, Year>>).
+    {asctimedate, {wkday(), date3(), timeb(), year4()}}.
 
 date1() ->
-    ?LET({Day, Month, Year},
-	 {day(), month(), year4()},
-	 <<Day, $\s, Month, $\s, Year>>).
+    {date1, {day(), month(), year4()}}.
 
 date2() ->
-    ?LET({Day, Month, Year},
-	 {day(), month(), year2()},
-	 <<Day, $-, Month, $-, Year>>).    
+    {date2, {day(), month(), year2()}}.
 
 date3() ->
-    ?LET({Day, Month}, {day(), month()}, <<Month, $\s, Day>>).
+    {date3, {day(), month()}}.
 
 timeb() ->
     ?LET({H, M, S}, {choose(0, 23), choose(0,59), choose(0, 59)},
-	 begin
-	     HH = twod(H),
-	     MM = twod(M),
-	     SS = twod(S),
-	     <<HH, $:, MM, $:, SS>>
-	 end).
+	 {twod(H), twod(M), twod(S)}).
 
 twod(Integer) ->
     string:right(integer_to_list(Integer), 2, $0).
@@ -182,14 +170,18 @@ year2() ->
     ?LET(Year, choose(0, 99), twod(Year)).
 
 wkday() ->
-    ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].
+    ?LET(Wkday, oneof(["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]), Wkday).
 
 weekday() ->
-    ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"].
+    ?LET(Weekday, oneof(["Monday", "Tuesday", "Wednesday", "Thursday", "Friday",
+			 "Saturday", "Sunday"]),
+	 Weekday).
 
 month() ->
-    ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-     "Nov", "Dec"].
+    ?LET(Month, 
+	 oneof(["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
+		"Oct", "Nov", "Dec"]),
+	 Month).
 
 status_code() ->
     lists:append([informational_code(), success_code(), redirection_code(),

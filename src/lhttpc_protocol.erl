@@ -141,13 +141,13 @@ decode_header_value(<<>>, H, V, State) ->
 	    {error, Reason}
     end;
 decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
-    decode_header(Rest, <<>>, State#state{cookies = [{H, decode_cookie(V)}
+    decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
 						     | State#state.cookies],
 					  headers = [{H, V} | State#state.headers]});
 decode_header_value(<<$\n, Rest/bits>>, H, V, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
 decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, State) ->
-    decode_header(Rest, <<>>, State#state{cookies = [{H, decode_cookie(V)}
+    decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
 						     | State#state.cookies],
 					  headers = [{H, V} | State#state.headers]});
 decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, State) ->
@@ -232,14 +232,18 @@ decode_cookie_av(<<$T, Rest/bits>>, Co, AV) ->
     decode_cookie_av(Rest, Co, <<AV/binary, $t>>);
 decode_cookie_av(<<$H, Rest/bits>>, Co, AV) ->
     decode_cookie_av(Rest, Co, <<AV/binary, $h>>);
+decode_cookie_av(<<$;, Rest/bits>>, Co, AV) ->
+    decode_cookie_av_ws(Rest, Co);
 decode_cookie_av(<<C, Rest/bits>>, Co, AV) ->
-    decode_cookie_av(Rest, Co, <<AV/binary, C>>).
+    decode_cookie_av(Rest, Co, <<AV/binary, C>>);
+decode_cookie_av(<<>>, Co, _AV) ->
+    ignore_cookie_av(<<>>, Co).
 
 decode_cookie_av_value(<<>>, Co, <<"path">>, Value) ->
     Co#lhttpc_cookie{path = Value};
 decode_cookie_av_value(<<>>, Co, <<"max-age">>, Value) ->
     Co#lhttpc_cookie{max_age = max_age(Value),
-		     timestamp = erlang:timestamp()};
+		     timestamp = calendar:universal_time()};
 decode_cookie_av_value(<<>>, Co, <<"expires">>, Value) ->
     Co#lhttpc_cookie{expires = expires(Value)};
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"path">>, Value) ->
