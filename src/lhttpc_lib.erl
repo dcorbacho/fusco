@@ -37,7 +37,6 @@
          format_request/6,
          header_value/2, header_value/3,
          maybe_atom_to_list/1,
-         format_hdrs/1,
          dec/1,
          update_cookies/2,
          to_lower/1,
@@ -140,7 +139,10 @@ parse_url(URL) ->
                      {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
 format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
     AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, Cookies),
-    [Method, " ", Path, " HTTP/1.1", ?HTTP_LINE_END, format_hdrs(AllHdrs), Body].
+    Formatted = [[Header, <<": ">>, Value, ?HTTP_LINE_END]
+		 || {Header, Value} <- AllHdrs],
+    [Method, <<" ">>, Path, <<" HTTP/1.1">>, ?HTTP_LINE_END, Formatted,
+     ?HTTP_LINE_END, Body].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -151,15 +153,6 @@ dec(Num) when is_integer(Num) ->
     Num - 1;
 dec(Else) ->
     Else.
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec format_hdrs(headers()) -> [string()].
-format_hdrs(Headers) ->
-    NormalizedHeaders = normalize_headers(Headers),
-    format_hdrs(NormalizedHeaders, []).
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -417,48 +410,6 @@ split_port(_,[$/ | _] = Path, Port) ->
     {list_to_integer(lists:reverse(Port)), Path};
 split_port(Scheme, [P | T], Port) ->
     split_port(Scheme, T, [P | Port]).
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @spec normalize_headers(RawHeaders) -> Headers
-%%   RawHeaders = [{atom() | binary() | string(), binary() | string()}]
-%%   Headers = headers()
-%% @doc Turns the headers into binaries suitable for inclusion in a HTTP request
-%% line.
-%% @end
-%%------------------------------------------------------------------------------
--spec normalize_headers(raw_headers()) -> headers().
-normalize_headers(Headers) ->
-    normalize_headers(Headers, []).
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec normalize_headers(raw_headers(), headers()) -> headers().
-normalize_headers([{Header, Value} | T], Acc) when is_list(Header) ->
-    NormalizedHeader = try
-        list_to_existing_atom(Header)
-    catch
-        error:badarg -> Header
-    end,
-    normalize_headers(T, [{NormalizedHeader, Value} | Acc]);
-normalize_headers([{Header, Value} | T], Acc) ->
-    normalize_headers(T, [{Header, Value} | Acc]);
-normalize_headers([], Acc) ->
-    Acc.
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
-format_hdrs([{Header, Value} | T], Acc) ->
-    NewAcc = [Header, <<": ">>, Value, ?HTTP_LINE_END | Acc],
-    format_hdrs(T, NewAcc);
-format_hdrs([], Acc) ->
-    [Acc, ?HTTP_LINE_END].
 
 %%------------------------------------------------------------------------------
 %% @private
