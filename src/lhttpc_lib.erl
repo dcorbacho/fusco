@@ -418,34 +418,37 @@ split_port(Scheme, [P | T], Port) ->
 %%------------------------------------------------------------------------------
 -spec add_mandatory_hdrs(string(), method(), headers(), host(),
                          iolist(), {boolean(), [#lhttpc_cookie{}]}) -> headers().
-add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}) ->
+add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {_, []}) ->
+    add_host(add_content_headers(Method, Hdrs, Body), Host);    
+add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {false, _}) ->
+    add_host(add_content_headers(Method, Hdrs, Body), Host);    
+add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, {true, Cookies}) ->
     ContentHdrs = add_content_headers(Method, Hdrs, Body),
-    case UseCookies of
-        true ->
-            % only include cookies if the cookie path is a prefix of the request path
-            % see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
-            IncludeCookies = lists:filter(
-                                fun(#lhttpc_cookie{path = undefined}) ->
-                                       true;
-                                   (X) ->
-                                       IsPrefix = string:str(Path, X#lhttpc_cookie.path),
-                                       if (IsPrefix =/= 1) ->
-                                           false;
-                                       true ->
-                                           true
-                                      end
-                               end, Cookies),
-            FinalHdrs = add_cookie_headers(ContentHdrs, IncludeCookies);
-        _ ->
-            FinalHdrs = ContentHdrs
+    %% only include cookies if the cookie path is a prefix of the request path
+    %% see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
+    %% TODO optimize cookie handling
+    case lists:filter(
+	   fun(#lhttpc_cookie{path = undefined}) ->
+		   true;
+	      (X) ->
+		   IsPrefix = string:str(Path, X#lhttpc_cookie.path),
+		   if (IsPrefix =/= 1) ->
+			   false;
+		      true ->
+			   true
+		   end
+	   end, Cookies)
+    of
+	[] ->
+	    FinalHdrs = ContentHdrs;
+	IncludeCookies ->
+	    FinalHdrs = add_cookie_headers(Hdrs, IncludeCookies)
     end,
     add_host(FinalHdrs, Host).
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-add_cookie_headers(Hdrs, []) ->
-    Hdrs;
 add_cookie_headers(Hdrs, Cookies) ->
     CookieString = make_cookie_string(Cookies, []),
     [{<<"Cookie">>, CookieString} | Hdrs].
@@ -470,25 +473,16 @@ cookie_string(#lhttpc_cookie{name = Name, value = Value}) ->
 %% @private
 %%------------------------------------------------------------------------------
 -spec add_content_headers(string(), headers(), iolist()) -> headers().
-add_content_headers("POST", Hdrs, Body) ->
-    add_content_headers(Hdrs, Body);
-add_content_headers("PUT", Hdrs, Body) ->
-    add_content_headers(Hdrs, Body);
-add_content_headers(_, Hdrs, _) ->
-    Hdrs.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
--spec add_content_headers(headers(), iolist()) -> headers().
-add_content_headers(Hdrs, Body) ->
+add_content_headers(Method, Hdrs, Body) when Method == "POST"; Method == "PUT"->
     case header_value(<<"content-length">>, Hdrs) of
         undefined ->
             ContentLength = integer_to_list(iolist_size(Body)),
             [{<<"Content-Length">>, ContentLength} | Hdrs];
         _ -> % We have a content length
             Hdrs
-    end.
+    end;
+add_content_headers(_, Hdrs, _) ->
+    Hdrs.
 
 %%------------------------------------------------------------------------------
 %% @private

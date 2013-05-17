@@ -75,7 +75,8 @@
         proxy :: undefined | #lhttpc_url{},
         proxy_ssl_options = [] :: [any()],
         proxy_setup = false :: boolean(),
-	host_header
+	host_header,
+	from
         }).
 
 %%==============================================================================
@@ -292,7 +293,8 @@ handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl},
 	  attempts = SendRetry,
 	  proxy = Proxy,
 	  proxy_setup = (Socket /= undefined),
-	  proxy_ssl_options = ProxySsl},
+	  proxy_ssl_options = ProxySsl,
+	  from = From},
     send_request(NewState).
 
 %%--------------------------------------------------------------------
@@ -481,7 +483,8 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
 %%------------------------------------------------------------------------------
 -spec read_response(#client_state{}) -> {any(), socket()} | no_return().
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
-                            request_headers = ReqHdrs, cookies = Cookies} = State) ->
+                            request_headers = ReqHdrs, cookies = Cookies,
+			    from = From} = State) ->
     case lhttpc_protocol:recv(Socket, Ssl) of
 	{_Vsn, <<$1,_,_>>, _Reason, _Cookies, _Hdrs, _Body} ->
 	    %% RFC 2616, section 10.1:
@@ -492,6 +495,7 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             %% status responses MAY be ignored by a user agent.
             read_response(State);
 	{Vsn, Status, Reason, NewCookies, NewHdrs, Body} ->
+	    gen_server:reply(From, {ok, {{Status, Reason}, NewHdrs, Body}}),
 	    FinalCookies =
 		case UseCookies of
 		    true ->
@@ -500,10 +504,11 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 			[]
 		end,
 	    NewSocket = maybe_close_socket(State, Vsn, ReqHdrs, NewHdrs),
-	    {reply, {ok, {{Status, Reason}, NewHdrs, Body}},
+	    {noreply,
 	     State#client_state{socket = NewSocket,
-				   request = undefined,
-				   cookies = FinalCookies}};
+				request = undefined,
+				from = undefined,
+				cookies = FinalCookies}};
 	{error, closed} ->
             % Either we only noticed that the socket was closed after we
             % sent the request, the server closed it just after we put
