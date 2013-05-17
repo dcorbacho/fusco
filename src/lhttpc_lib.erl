@@ -34,7 +34,7 @@
 -module(lhttpc_lib).
 
 -export([parse_url/1,
-         format_request/7,
+         format_request/6,
          header_value/2, header_value/3,
          maybe_atom_to_list/1,
          format_hdrs/1,
@@ -45,8 +45,7 @@
 	 get_value/3,
 	 host_header/2,
 	 is_close/1,
-	 is_keep_alive/1,
-	 is_chunked/1]).
+	 is_keep_alive/1]).
 
 -include("lhttpc_types.hrl").
 -include("lhttpc.hrl").
@@ -126,25 +125,22 @@ parse_url(URL) ->
                 user = User, password = Passwd, is_ssl = (Scheme =:= https)}.
 
 %%------------------------------------------------------------------------------
-%% @spec (Path, Method, Headers, Host, Port, Body, PartialUpload, Cookies) ->
+%% @spec (Path, Method, Headers, Host, Port, Body, Cookies) ->
 %%    Request
 %% Path = iolist()
 %% Method = atom() | string()
 %% Headers = [{atom() | string(), string()}]
 %% Host = string()
 %% Body = iolist()
-%% PartialUpload = true | false
 %% Cookies = [#lhttpc_cookie{}]
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
 -spec format_request(iolist(), method(), headers(), string(),  iolist(),
-                     boolean(), {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
-format_request(Path, Method, Hdrs, Host, Body, PartialUpload, Cookies) ->
-    AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, PartialUpload, Cookies),
-    IsChunked = is_chunked_transfer(AllHdrs),
-    {IsChunked, [Method, " ", Path, " HTTP/1.1", ?HTTP_LINE_END, format_hdrs(AllHdrs),
-     format_body(Body, IsChunked)]}.
+                     {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
+format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
+    AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, Cookies),
+    [Method, " ", Path, " HTTP/1.1", ?HTTP_LINE_END, format_hdrs(AllHdrs), Body].
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -284,43 +280,6 @@ keep_to_lower($V) ->
 keep_to_lower(C) ->
     C.
 
-is_chunked(<<"Chunked">>) ->
-    true;
-is_chunked(<<"chunked">>) ->
-    true;
-is_chunked(C) ->
-    is_chunked(C, "chunked").
-
-is_chunked(<<C, Rest1/bits>>, [C | Rest2]) ->
-    is_chunked(Rest1, Rest2);
-is_chunked(<<C1, Rest1/bits>>, [C2 | Rest2]) ->
-    case chunked_to_lower(C1) == C2 of
-	true ->
-	    is_chunked(Rest1, Rest2);
-	false ->
-	    false
-    end;
-is_chunked(<<>>, _) ->
-    false;
-is_chunked(_, []) ->
-    false.
-
-chunked_to_lower($C) ->
-    $c;
-chunked_to_lower($H) ->
-    $h;
-chunked_to_lower($U) ->
-    $u;
-chunked_to_lower($N) ->
-    $n;
-chunked_to_lower($K) ->
-    $k;
-chunked_to_lower($E) ->
-    $e;
-chunked_to_lower($D) ->
-    $d;
-chunked_to_lower(C) ->
-    C.
 %%------------------------------------------------------------------------------
 %% @doc Gets value from tuple list
 %% @end
@@ -506,27 +465,10 @@ format_hdrs([], Acc) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec format_body(iolist(), boolean()) -> iolist().
-format_body(Body, false) ->
-    Body;
-format_body(Body, true) ->
-    case iolist_size(Body) of
-        0 ->
-            <<>>;
-        Size ->
-            [erlang:integer_to_list(Size, 16), ?HTTP_LINE_END,
-             Body, ?HTTP_LINE_END]
-    end.
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
 -spec add_mandatory_hdrs(string(), method(), headers(), host(),
-                         iolist(), boolean(), {boolean(), [#lhttpc_cookie{}]}) -> headers().
-add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, PartialUpload, {UseCookies, Cookies}) ->
-    ContentHdrs = add_content_headers(Method, Hdrs, Body, PartialUpload),
+                         iolist(), {boolean(), [#lhttpc_cookie{}]}) -> headers().
+add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}) ->
+    ContentHdrs = add_content_headers(Method, Hdrs, Body),
     case UseCookies of
         true ->
             % only include cookies if the cookie path is a prefix of the request path
@@ -576,40 +518,25 @@ cookie_string(#lhttpc_cookie{name = Name, value = Value}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
--spec add_content_headers(string(), headers(), iolist(), boolean()) -> headers().
-add_content_headers("POST", Hdrs, Body, PartialUpload) ->
-    add_content_headers(Hdrs, Body, PartialUpload);
-add_content_headers("PUT", Hdrs, Body, PartialUpload) ->
-    add_content_headers(Hdrs, Body, PartialUpload);
-add_content_headers(_, Hdrs, _, _PartialUpload) ->
+-spec add_content_headers(string(), headers(), iolist()) -> headers().
+add_content_headers("POST", Hdrs, Body) ->
+    add_content_headers(Hdrs, Body);
+add_content_headers("PUT", Hdrs, Body) ->
+    add_content_headers(Hdrs, Body);
+add_content_headers(_, Hdrs, _) ->
     Hdrs.
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
--spec add_content_headers(headers(), iolist(), boolean()) -> headers().
-add_content_headers(Hdrs, Body, false) ->
+-spec add_content_headers(headers(), iolist()) -> headers().
+add_content_headers(Hdrs, Body) ->
     case header_value(<<"content-length">>, Hdrs) of
         undefined ->
             ContentLength = integer_to_list(iolist_size(Body)),
             [{<<"Content-Length">>, ContentLength} | Hdrs];
         _ -> % We have a content length
             Hdrs
-    end;
-add_content_headers(Hdrs, _Body, true) ->
-    case {header_value(<<"content-length">>, Hdrs),
-          header_value(<<"transfer-encoding">>, Hdrs)} of
-        {undefined, undefined} ->
-            [{<<"Transfer-Encoding">>, <<"chunked">>} | Hdrs];
-        {undefined, TransferEncoding} ->
-	    case is_chunked_transfer(TransferEncoding) of
-		true -> Hdrs;
-                false -> erlang:error({error, unsupported_transfer_encoding})
-            end;
-        {_Length, undefined} ->
-            Hdrs;
-        {_Length, _TransferEncoding} -> %% have both cont.length and chunked
-            erlang:error({error, bad_header})
     end.
 
 %%------------------------------------------------------------------------------
@@ -624,20 +551,6 @@ add_host(Hdrs, Host) ->
             [{<<"Host">>, Host} | Hdrs];
         _ -> % We have a host
             Hdrs
-    end.
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec is_chunked(headers()) -> boolean().
-is_chunked_transfer(Hdrs) ->
-    case lists:keyfind(<<"transfer-encoding">>, 1, Hdrs) of
-	false ->
-	    false;
-	{_, Value} ->
-	    is_chunked(Value)
     end.
 
 %%------------------------------------------------------------------------------

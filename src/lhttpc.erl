@@ -39,11 +39,7 @@
 -export([connect/2,
 	 request/6,
 	 request/7,
-	 request/10,
-         send_body_part/2,
-         send_body_part/3,
-         send_trailers/2,
-	 send_trailers/3,
+	 request/9,
          disconnect/1]).
 
 %% gen_server callbacks
@@ -73,10 +69,8 @@
         requester,
         cookies = [] :: [#lhttpc_cookie{}],
         use_cookies = false :: boolean(),
-        partial_upload = false :: boolean(),
-        chunked_upload = false :: boolean(),
         %% in case of infinity we read whatever data we can get from
-        %% the wire at that point or in case of chunked one chunk
+        %% the wire at that point
         attempts = 0 :: integer(),
         proxy :: undefined | #lhttpc_url{},
         proxy_ssl_options = [] :: [any()],
@@ -94,96 +88,6 @@
 connect(Destination, Options) ->
     verify_options(Options),
     gen_server:start(?MODULE, {Destination, Options}, []).
-
-%%------------------------------------------------------------------------------
-%% @spec (UploadState :: UploadState, BodyPart :: BodyPart) -> Result
-%%   BodyPart = iodata() | binary()
-%%   Timeout = integer() | infinity
-%%   Result = {error, Reason} | UploadState
-%%   Reason = connection_closed | connect_timeout | timeout
-%% @doc Sends a body part to an ongoing request when
-%% `{partial_upload, WindowSize}' is used. The default timeout, `infinity'
-%% will be used. Notice that if `WindowSize' is infinity, this call will never
-%% block.
-%% Would be the same as calling
-%% `send_body_part(UploadState, BodyPart, infinity)'.
-%% @end
-%%------------------------------------------------------------------------------
--spec send_body_part(upload_state(), bodypart()) -> result().
-send_body_part({Pid, Window}, IoList) ->
-    send_body_part({Pid, Window}, IoList, infinity).
-
-%%------------------------------------------------------------------------------
-%% @spec (UploadState :: UploadState, BodyPart :: BodyPart, Timeout) -> Result
-%%   BodyPart = iodata() | binary()
-%%   Timeout = integer() | infinity
-%%   Result = {error, Reason} | UploadState
-%%   Reason = connection_closed | connect_timeout | timeout
-%% @doc Sends a body part to an ongoing request when
-%% `{partial_upload, WindowSize}' is used.
-%% `Timeout' is the timeout for the request in milliseconds.
-%%
-%% If the window size reaches 0 the call will block for at maximum Timeout
-%% milliseconds. If there is no acknowledgement received during that time the
-%% the request is cancelled and `{error, timeout}' is returned.
-%%
-%% As long as the window size is larger than 0 the function will return
-%% immediately after sending the body part to the request handling process.
-%%
-%% The `BodyPart' `http_eob' signals an end of the entity body, the request
-%% is considered sent and the response will be read from the socket. If
-%% there is no response within `Timeout' milliseconds, the request is
-%% canceled and `{error, timeout}' is returned.
-%% @end
-%%------------------------------------------------------------------------------
--spec send_body_part(upload_state(), bodypart(), timeout()) -> result().
-send_body_part(Client, Part, Timeout) ->
-    gen_server:call(Client, {send_body_part, Part}, Timeout).
-
-%%------------------------------------------------------------------------------
-%% @spec (UploadState :: UploadState, Trailers) -> Result
-%%   Header = string() | binary() | atom()
-%%   Value = string() | binary()
-%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
-%%            | {error, Reason}
-%%   Reason = connection_closed | connect_timeout | timeout
-%% @doc Sends trailers to an ongoing request when `{partial_upload,
-%% WindowSize}' is used and no `Content-Length' was specified. The default
-%% timout `infinity' will be used. Plase note that after this the request is
-%% considered complete and the response will be read from the socket.
-%% Would be the same as calling
-%% `send_trailers(UploadState, BodyPart, infinity)'.
-%% @end
-%%------------------------------------------------------------------------------
--spec send_trailers({pid(), window_size()}, headers()) -> result().
-send_trailers(Client, Trailers) ->
-    send_trailers(Client, Trailers, infinity).
-
-%%------------------------------------------------------------------------------
-%% @spec (UploadState :: UploadState, Trailers, Timeout) -> Result
-%%   Trailers = [{Header, Value}]
-%%   Header = string() | binary() | atom()
-%%   Value = string() | binary()
-%%   Timeout = integer() | infinity
-%%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
-%%            | {error, Reason}
-%%   Reason = connection_closed | connect_timeout | timeout
-%% @doc Sends trailers to an ongoing request when
-%% `{partial_upload, WindowSize}' is used and no `Content-Length' was
-%% specified.
-%% `Timeout' is the timeout for sending the trailers and reading the
-%% response in milliseconds.
-%%
-%% Sending trailers also signals the end of the entity body, which means
-%% that no more body parts, or trailers can be sent and the response to the
-%% request will be read from the socket. If no response is received within
-%% `Timeout' milliseconds the request is canceled and `{error, timeout}' is
-%% returned.
-%% @end
-%%------------------------------------------------------------------------------
--spec send_trailers({pid(), window_size()}, headers(), timeout()) -> result().
-send_trailers(Client, Trailers, Timeout) when is_list(Trailers), is_pid(Client)->
-    gen_server:call(Client, {send_trailers, Trailers}, Timeout).
 
 %%------------------------------------------------------------------------------
 %% @doc Stops a Client.
@@ -218,15 +122,13 @@ request(Client, Path, Method, Hdrs, Body, Timeout) ->
 %%------------------------------------------------------------------------------
 -spec request(pid(), string(), method(), headers(), iolist(), integer(), options()) -> result().
 request(Client, Path, Method, Hdrs, Body, Timeout, []) ->
-    request(Client, Path, Method, Hdrs, Body, false, false, 1, [], Timeout);
+    request(Client, Path, Method, Hdrs, Body, false, 1, [], Timeout);
 request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
     verify_options(Options),
-    PartialUpload = lhttpc_lib:get_value(partial_upload, Options, false),
     ProxyInfo = lhttpc_lib:get_value(proxy, Options, false),
     SendRetry = lhttpc_lib:get_value(send_retry, Options, 1),
     ProxySsl = lhttpc_lib:get_value(proxy_ssl_options, Options, []),
-    request(Client, Path, Method, Hdrs, Body, PartialUpload, ProxyInfo, SendRetry,
-	    ProxySsl, Timeout).
+    request(Client, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl, Timeout).
 
 %%------------------------------------------------------------------------------
 %% @spec (Host, Port, Ssl, Path, Method, Hdrs, RequestBody, Timeout, Options) ->
@@ -245,7 +147,6 @@ request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
 %%   Option = {connect_timeout, Milliseconds | infinity} |
 %%            {connect_options, [ConnectOptions]} |
 %%            {send_retry, integer()} |
-%%            {partial_upload, WindowSize} |
 %%            {proxy, ProxyUrl} |
 %%            {proxy_ssl_options, SslOptions}
 %%   Milliseconds = integer()
@@ -312,28 +213,7 @@ request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
 %%
 %% `{send_retry, N}' specifies how many times the client should retry
 %% sending a request if the connection is closed after the data has been
-%% sent. The default value is `1'. If `{partial_upload, WindowSize}'
-%% (see below) is specified, the client cannot retry after the first part
-%% of the body has been sent since it doesn't keep the whole entitity body
-%% in memory.
-%%
-%% `{partial_upload, WindowSize}' means that the request entity body will be
-%% supplied in parts to the client by the calling process. The `WindowSize'
-%% specifies how many parts can be sent to the process controlling the socket
-%% before waiting for an acknowledgement. This is to create a kind of
-%% internal flow control if the network is slow and the client process is
-%% blocked by the TCP stack. Flow control is disabled if `WindowSize' is
-%% `infinity'. If `WindowSize' is an integer, it must be >= 0. If partial
-%% upload is specified and no `Content-Length' is specified in `Hdrs' the
-%% client will use chunked transfer encoding to send the entity body.
-%% If a content length is specified, this must be the total size of the entity
-%% body.
-%% The call to {@link request/6} will return `{ok, UploadState}'. The
-%% `UploadState' is supposed to be used as the first argument to the {@link
-%% send_body_part/2} or {@link send_body_part/3} functions to send body parts.
-%% Partial upload is intended to avoid keeping large request bodies in
-%% memory but can also be used when the complete size of the body isn't known
-%% when the request is started.
+%% sent. The default value is `1'. 
 %%
 %% `{proxy, ProxyUrl}' if this option is specified, a proxy server is used as
 %% an intermediary for all communication with the destination server. The link
@@ -345,11 +225,10 @@ request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
 %% list of all available options, please check OTP's ssl module manpage.
 %% @end
 %%------------------------------------------------------------------------------
-request(Client, Path, Method, Hdrs, Body, PartialUpload, ProxyInfo, SendRetry,
-	ProxySsl, Timeout) ->
+request(Client, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl, Timeout) ->
     try
-	gen_server:call(Client, {request, Path, Method, Hdrs, Body, PartialUpload,
-				 ProxyInfo, SendRetry, ProxySsl}, Timeout)
+	gen_server:call(Client, {request, Path, Method, Hdrs, Body, ProxyInfo,
+				 SendRetry, ProxySsl}, Timeout)
     catch
 	exit:{timeout, _} ->
 	    {error, timeout}
@@ -388,8 +267,7 @@ init({Destination, Options}) ->
 %% the socket.
 %% @end
 %%------------------------------------------------------------------------------
-handle_call({request, Path, Method, Hdrs, Body, PartialUpload, ProxyInfo, SendRetry,
-	     ProxySsl}, From,
+handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl}, From,
             State = #client_state{ssl = Ssl, host_header = Host,
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
@@ -403,9 +281,8 @@ handle_call({request, Path, Method, Hdrs, Body, PartialUpload, ProxyInfo, SendRe
 		{proxy, ProxyUrl} when is_list(ProxyUrl) ->
 		    lhttpc_lib:parse_url(ProxyUrl)
 	    end,
-    {ChunkedUpload, Request} =
-	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, PartialUpload,
-				  {UseCookies, Cookies}),
+    Request =
+	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
     NewState =
 	State#client_state{
 	  method = Method,
@@ -413,37 +290,10 @@ handle_call({request, Path, Method, Hdrs, Body, PartialUpload, ProxyInfo, SendRe
 	  requester = From,
 	  request_headers = Hdrs,
 	  attempts = SendRetry,
-	  partial_upload = PartialUpload,
-	  chunked_upload = ChunkedUpload,
 	  proxy = Proxy,
 	  proxy_setup = (Socket /= undefined),
 	  proxy_ssl_options = ProxySsl},
-    send_request(NewState);
-handle_call(_Msg, _From, #client_state{request = undefined} = State) ->
-    {reply, {error, no_pending_request}, State};
-handle_call({send_body_part, _}, _From, State = #client_state{partial_upload = false}) ->
-    {reply, {error, no_partial_upload}, State};
-handle_call(_Msg, _From, #client_state{socket = undefined} = State) ->
-    {reply, {error, connection_closed}, State#client_state{request = undefined}};
-handle_call({send_trailers, Trailers}, _From, State) ->
-    case int_send_trailers(State, Trailers) of
-        {ok, NewState} ->
-            read_response(NewState);
-        {Error, NewState} ->
-            {reply, Error, NewState}
-    end;
-handle_call({send_body_part, http_eob}, From, State) ->
-    case int_send_body_part(State, http_eob) of
-        {ok, NewState} ->
-            read_response(NewState#client_state{requester = From});
-        {Error, NewState} ->
-            {reply, Error, NewState}
-    end;
-handle_call({send_body_part, Data}, From, State) ->
-    gen_server:reply(From, ok),
-    {_Reply, NewState} = int_send_body_part(State, Data),
-    {noreply, NewState}.
-
+    send_request(NewState).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -509,13 +359,6 @@ code_change(_OldVsn, State, _Extra) ->
 %%==============================================================================
 %%------------------------------------------------------------------------------
 %% @private
-%%------------------------------------------------------------------------------
-int_send_body_part(State = #client_state{socket = Socket, ssl = Ssl}, BodyPart) ->
-    Data = encode_body_part(State, BodyPart),
-    check_send_result(State, lhttpc_sock:send(Socket, Data, Ssl)).
-
-%%------------------------------------------------------------------------------
-%% @private
 %% @doc This function creates a new socket connection if needed, and it also
 %% handles the proxy connection.
 %% @end
@@ -570,13 +413,7 @@ send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
     %% no proxy
     case lhttpc_sock:send(Socket, Request, Ssl) of
         ok ->
-            if
-                %% {partial_upload, WindowSize} is used.
-                State#client_state.partial_upload     ->
-                    {reply, {ok, partial_upload}, State#client_state{attempts = 0}};
-                not State#client_state.partial_upload ->
-                    read_response(State)
-            end;
+	    read_response(State);
         {error, closed} ->
             lhttpc_sock:close(Socket, Ssl),
             send_request(State#client_state{socket = undefined, attempts = Attempts - 1});
@@ -639,38 +476,6 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
 
 %%------------------------------------------------------------------------------
 %% @private
-%%------------------------------------------------------------------------------
-int_send_trailers(#client_state{chunked_upload = true, socket = Socket, ssl= Ssl} = State, Trailers) ->
-    Data = list_to_binary("0" ++ ?HTTP_LINE_END),
-    Data2 = [Data, lhttpc_lib:format_hdrs(Trailers)],
-    check_send_result(State, lhttpc_sock:send(Socket, Data2, Ssl));
-int_send_trailers(#client_state{chunked_upload = false} = State, _Trailers) ->
-    {{error, trailers_not_allowed}, State}.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-encode_body_part(#client_state{chunked_upload = true}, http_eob) ->
-    list_to_binary("0" ++ ?HTTP_LINE_END ++ ?HTTP_LINE_END);
-encode_body_part(#client_state{chunked_upload = false}, http_eob) ->
-    <<>>;
-encode_body_part(#client_state{chunked_upload = true}, Data) ->
-    Size = list_to_binary(erlang:integer_to_list(iolist_size(Data), 16)),
-    [Size, <<?HTTP_LINE_END>>, Data, <<?HTTP_LINE_END>>];
-encode_body_part(#client_state{chunked_upload = false}, Data) ->
-    Data.
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-check_send_result(State, ok) ->
-    {ok, State};
-check_send_result(State, Error) ->
-    lhttpc_sock:close(State#client_state.socket, State#client_state.ssl),
-    {Error, State#client_state{socket = undefined, request = undefined}}.
-
-%%------------------------------------------------------------------------------
-%% @private
 %% @doc @TODO This does not handle redirects at the moment.
 %% @end
 %%------------------------------------------------------------------------------
@@ -700,8 +505,6 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 				   request = undefined,
 				   cookies = FinalCookies}};
 	{error, closed} ->
-            %% TODO does it work for partial uploads? I think should return an error
-
             % Either we only noticed that the socket was closed after we
             % sent the request, the server closed it just after we put
             % the request on the wire or the server has some isses and is
@@ -846,11 +649,6 @@ verify_options([{connect_timeout, infinity} | Options]) ->
     verify_options(Options);
 verify_options([{connect_timeout, MS} | Options])
         when is_integer(MS), MS >= 0 ->
-    verify_options(Options);
-verify_options([{partial_upload, Bool} | Options])
-        when is_boolean(Bool) ->
-    verify_options(Options);
-verify_options([{partial_upload, infinity} | Options])  ->
     verify_options(Options);
 verify_options([{connect_options, List} | Options]) when is_list(List) ->
     verify_options(Options);

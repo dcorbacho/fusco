@@ -67,6 +67,8 @@ decode_header(<<$:, Rest/bits>>, Header, State) ->
     decode_header_value_ws(Rest, Header, State);
 decode_header(<<$\n, Rest/bits>>, <<>>, State) ->
     decode_body(Rest, State);
+decode_header(<<$\r,$\n>>, <<>>, State = #state{status_code = <<$1, _, _>>}) ->
+    decode_body(<<>>, State);
 decode_header(<<$\r,$\n, Rest/bits>>, <<>>,
 	      State = #state{status_code = <<$1, _, _>>,
 			     headers = []}) ->
