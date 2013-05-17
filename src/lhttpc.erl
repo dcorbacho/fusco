@@ -366,7 +366,7 @@ code_change(_OldVsn, State, _Extra) ->
 %% @end
 %%------------------------------------------------------------------------------
 send_request(#client_state{attempts = 0} = State) ->
-    {reply, {error, connection_closed}, State#client_state{request = undefined}};
+    {reply, {error, connection_closed}, State};
 send_request(#client_state{socket = undefined} = State) ->
     % if we dont get a keep alive from the previous request, the socket is undefined.
     case connect_socket(State) of
@@ -404,11 +404,11 @@ send_request(#client_state{proxy = #lhttpc_url{}, proxy_setup = false,
         {error, closed} ->
             lhttpc_sock:close(Socket, Ssl),
             {reply, {error, proxy_connection_closed},
-             State#client_state{socket = undefined, request = undefined}};
+             State#client_state{socket = undefined}};
         {error, _Reason} ->
             lhttpc_sock:close(Socket, Ssl),
             {reply, {error, proxy_connection_closed},
-             State#client_state{socket = undefined, request = undefined}}
+             State#client_state{socket = undefined}}
     end;
 send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
                            attempts = Attempts} = State) ->
@@ -421,8 +421,7 @@ send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
             send_request(State#client_state{socket = undefined, attempts = Attempts - 1});
         {error, _Reason} ->
             lhttpc_sock:close(Socket, Ssl),
-            {reply, {error, connection_closed}, State#client_state{socket = undefined,
-                                                                   request = undefined}}
+            {reply, {error, connection_closed}, State#client_state{socket = undefined}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -470,10 +469,9 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
         {error, closed} ->
             lhttpc_sock:close(Socket, ProxyIsSsl),
             {{error, proxy_connection_closed},
-             State#client_state{socket = undefined, request = undefined}};
+             State#client_state{socket = undefined}};
         {error, Reason} ->
-            {{error, {proxy_connection_failed, Reason}},
-             State#client_state{request = undefined}}
+            {{error, {proxy_connection_failed, Reason}}, State}
     end.
 
 %%------------------------------------------------------------------------------
@@ -506,8 +504,6 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 	    NewSocket = maybe_close_socket(State, Vsn, ReqHdrs, NewHdrs),
 	    {noreply,
 	     State#client_state{socket = NewSocket,
-				request = undefined,
-				from = undefined,
 				cookies = FinalCookies}};
 	{error, closed} ->
             % Either we only noticed that the socket was closed after we
@@ -525,8 +521,8 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-maybe_close_socket(#client_state{socket = Socket} = State, {1, Minor},
-                   ReqHdrs, RespHdrs) when Minor >= 1->
+maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ReqHdrs,
+		   RespHdrs) ->
     ClientConnection = case lists:keyfind(<<"connection">>, 1, ReqHdrs) of
 			   false ->
 			       false;
