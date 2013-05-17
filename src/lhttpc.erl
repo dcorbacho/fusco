@@ -656,6 +656,8 @@ verify_options([{proxy, List} | Options]) when is_list(List) ->
     verify_options(Options);
 verify_options([{proxy_ssl_options, List} | Options]) when is_list(List) ->
     verify_options(Options);
+verify_options([{use_cookies, B} | Options]) when is_boolean(B) ->
+    verify_options(Options);
 verify_options([Option | _Rest]) ->
     erlang:error({bad_option, Option});
 verify_options([]) ->
