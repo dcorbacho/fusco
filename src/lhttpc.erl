@@ -493,17 +493,23 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             read_response(State);
 	{Vsn, Status, Reason, NewCookies, NewHdrs, Connection, Body} ->
 	    gen_server:reply(From, {ok, {{Status, Reason}, NewHdrs, Body}}),
-	    FinalCookies =
-		case UseCookies of
-		    true ->
-			lhttpc_lib:update_cookies(NewCookies, Cookies);
-		    _ ->
-			[]
-		end,
-	    NewSocket = maybe_close_socket(State, Vsn, ReqHdrs, Connection),
-	    {noreply,
-	     State#client_state{socket = NewSocket,
-				cookies = FinalCookies}};
+	    case maybe_close_socket(State, Vsn, ReqHdrs, Connection) of
+		undefined ->
+		    case UseCookies of
+			true ->
+			    {noreply, State#client_state{socket = undefined,
+							 cookies = lhttpc_lib:update_cookies(NewCookies, Cookies)}};
+			false ->
+			    {noreply, State#client_state{socket = undefined}}
+		    end;
+		_ ->
+		    case UseCookies of
+			true ->
+			    {noreply, State#client_state{cookies = lhttpc_lib:update_cookies(NewCookies, Cookies)}};
+			_ ->
+			    {noreply, State}
+		    end
+	    end;
 	{error, closed} ->
             % Either we only noticed that the socket was closed after we
             % sent the request, the server closed it just after we put
@@ -520,35 +526,43 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ReqHdrs,
-		   Connection) ->
+maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, _, <<"close">>) ->
+    lhttpc_sock:close(Socket, State#client_state.ssl),
+    undefined;
+maybe_close_socket(#client_state{socket = Socket}, {1, 1}, [], _) ->
+    Socket;
+maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ReqHdrs, _) ->
     ClientConnection = case lists:keyfind(<<"connection">>, 1, ReqHdrs) of
 			   false ->
 			       false;
 			   {_, Value} ->
 			       lhttpc_lib:is_close(Value)
 		       end,
-    ServerConnection = (Connection == <<"close">>),
     if
-        ClientConnection orelse ServerConnection ->
+        ClientConnection ->
             lhttpc_sock:close(Socket, State#client_state.ssl),
             undefined;
-        (not ClientConnection) andalso (not ServerConnection) ->
+        (not ClientConnection) ->
             Socket
     end;
-maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, Connection) ->
+maybe_close_socket(#client_state{socket = Socket}, _, [], <<"keep-alive">>) ->
+    Socket;
+maybe_close_socket(#client_state{socket = Socket} = State, _, _, C)
+  when C =/= <<"keep-alive">> ->
+    lhttpc_sock:close(Socket, State#client_state.ssl),
+    undefined;
+maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, _) ->
     ClientConnection = case lists:keyfind(<<"connection">>, 1, ReqHdrs) of
 			   false ->
 			       false;
 			   {_, Value} ->
 			       lhttpc_lib:is_close(Value)
 		       end,
-    ServerConnection = (Connection == <<"keep-alive">>),
     if
-        ClientConnection orelse (not ServerConnection) ->
+        ClientConnection ->
             lhttpc_sock:close(Socket, State#client_state.ssl),
             undefined;
-        (not ClientConnection) andalso ServerConnection ->
+        (not ClientConnection) ->
             Socket
     end.
 
