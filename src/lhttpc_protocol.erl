@@ -10,7 +10,7 @@
 -include("lhttpc.hrl").
 
 -record(state, {socket, ssl, version, status_code, reason, headers = [],
-		cookies = []}).
+		connection, cookies = []}).
 
 %% API
 -export([recv/2,
@@ -137,6 +137,8 @@ decode_header_value_ws(<<$\s, Rest/bits>>, H, S) ->
     decode_header_value_ws(Rest, H, S);
 decode_header_value_ws(<<$\t, Rest/bits>>, H, S) ->
     decode_header_value_ws(Rest, H, S);
+decode_header_value_ws(Rest, <<"connection">> = H, S) ->
+    decode_header_value_lc(Rest, H, <<>>, <<>>, S);
 decode_header_value_ws(Rest, H, S) ->
     decode_header_value(Rest, H, <<>>, <<>>, S).
 
@@ -163,8 +165,50 @@ decode_header_value(<<$\s, Rest/bits>>, H, V, T, State) ->
     decode_header_value(Rest, H, V, <<T/binary, $\s>>, State);
 decode_header_value(<<$\t, Rest/bits>>, H, V, T, State) ->
     decode_header_value(Rest, H, V, <<T/binary, $\t>>, State);
+decode_header_value(<<C, Rest/bits>>, H, V, <<>>, State) ->
+    decode_header_value(Rest, H, <<V/binary, C>>, <<>>, State);
 decode_header_value(<<C, Rest/bits>>, H, V, T, State) ->
     decode_header_value(Rest, H, <<V/binary, T/binary, C>>, <<>>, State).
+
+decode_header_value_lc(<<>>, H, V, T, State) ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_header_value_lc(Data, H, V, T, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;
+decode_header_value_lc(<<$\n, Rest/bits>>, H, V, _T, State) ->
+    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+					  connection = V});
+decode_header_value_lc(<<$\r, $\n, Rest/bits>>, H, V, _T, State) ->
+    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+					  connection = V});
+decode_header_value_lc(<<$\s, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, V, <<T/binary, $\s>>, State);
+decode_header_value_lc(<<$\t, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, V, <<T/binary, $\t>>, State);
+decode_header_value_lc(<<$A, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $a>>, <<>>, State);
+decode_header_value_lc(<<$C, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $c>>, <<>>, State);
+decode_header_value_lc(<<$E, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $e>>, <<>>, State);
+decode_header_value_lc(<<$I, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $i>>, <<>>, State);
+decode_header_value_lc(<<$K, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $k>>, <<>>, State);
+decode_header_value_lc(<<$L, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $l>>, <<>>, State);
+decode_header_value_lc(<<$O, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $o>>, <<>>, State);
+decode_header_value_lc(<<$P, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $p>>, <<>>, State);
+decode_header_value_lc(<<$S, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $s>>, <<>>, State);
+decode_header_value_lc(<<$V, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $v>>, <<>>, State);
+decode_header_value_lc(<<C, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, C>>, <<>>, State).
 
 %% RFC 6265
 %% TODO decode cookie values, this only accepts 'a=b'
@@ -272,7 +316,7 @@ decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
     decode_cookie_av_value(Rest, Co, AV, <<Value/binary, C>>).
 
 decode_body(Rest, State) ->
-    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, Rest}.
+    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, State#state.connection, Rest}.
 
 max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.

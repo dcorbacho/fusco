@@ -22,10 +22,11 @@ prop_http_response() ->
 		Recv = lhttpc_protocol:recv(Socket, false),
 		test_utils:stop_listener(L),
 		Expected = expected_output(StatusLine, Headers, Cookies, Body),
+		Cleared = clear_timestamps(Recv),
 		?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
-				    " ~p~nExpected: ~p~n",
-				    [binary:list_to_bin(Msg), Recv, Expected]),
-			  case clear_timestamps(Recv) of
+				    " ~p~nCleared: ~p~nExpected: ~p~n",
+				    [binary:list_to_bin(Msg), Recv, Cleared, Expected]),
+			  case Cleared of
 			      Expected ->
 				  true;
 			      _ ->
@@ -44,7 +45,8 @@ expected_output({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body) ->
     OCookies = [{Name, list_to_binary(build_cookie(Cookie))} || {Name, Cookie} <- Cookies],
     LowerHeaders = lists:reverse(headers_to_lower(Headers ++ OCookies)),
     CookiesRec = output_cookies(Cookies),
-    {Version, StatusCode, Reason, CookiesRec, LowerHeaders, Body}.
+    {Version, StatusCode, Reason, CookiesRec, LowerHeaders,
+     to_lower(proplists:get_value(<<"connection">>, LowerHeaders)), Body}.
 
 output_cookies(Cookies) ->
     output_cookies(Cookies, []).
@@ -87,8 +89,8 @@ months() ->
      {"May", 5}, {"Jun", 6}, {"Jul", 7}, {"Aug", 8},
      {"Sep", 9}, {"Oct", 10}, {"Nov", 11}, {"Dec", 12}].
 
-clear_timestamps({V, S, R, C, H, B}) ->
-    {V, S, R, [Co#lhttpc_cookie{timestamp=undefined} || Co <- C], H, B}.
+clear_timestamps({V, S, R, C, H, Co, B}) ->
+    {V, S, R, [Co#lhttpc_cookie{timestamp=undefined} || Co <- C], H, to_lower(Co), B}.
 
 colon() ->
     <<$:>>.
@@ -111,8 +113,18 @@ http_version(<<"HTTP/1.0">>) ->
     {1, 0}.
 
 headers_to_lower(Headers) ->
-    [{to_lower(H), V} || {H, V} <- Headers].
+    [begin
+	 He = to_lower(H),
+	 case He of
+	     <<"connection">> ->
+		 {He, to_lower(V)};
+	     _ ->
+		 {He, V}
+	 end
+     end || {H, V} <- Headers].
 
+to_lower(undefined) ->
+    undefined;
 to_lower(Bin) ->
     list_to_binary(string:to_lower(binary_to_list(Bin))).
 

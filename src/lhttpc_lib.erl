@@ -35,7 +35,7 @@
 
 -export([parse_url/1,
          format_request/6,
-         header_value/2, header_value/3,
+         header_value/2,
          maybe_atom_to_list/1,
          dec/1,
          update_cookies/2,
@@ -43,8 +43,7 @@
 	 get_value/2,
 	 get_value/3,
 	 host_header/2,
-	 is_close/1,
-	 is_keep_alive/1]).
+	 is_close/1]).
 
 -include("lhttpc_types.hrl").
 -include("lhttpc.hrl").
@@ -68,26 +67,10 @@
 %%------------------------------------------------------------------------------
 -spec header_value(string(), headers()) -> undefined | term().
 header_value(Hdr, Hdrs) ->
-    header_value(Hdr, Hdrs, undefined).
-
-%%------------------------------------------------------------------------------
-%% @spec header_value(Header, Headers, Default) -> Default | term()
-%% Header = string()
-%% Headers = [{string(), term()}]
-%% Value = term()
-%% Default = term()
-%% @doc
-%% Returns the value associated with the `Header' in `Headers'.
-%% `Header' must be a lowercase string, since every header is mangled to
-%% check the match.  If no match is found, `Default' is returned.
-%% @end
-%%------------------------------------------------------------------------------
--spec header_value(binary(), headers(), term()) -> term().
-header_value(Hdr, Hdrs, Default) ->
     %% TODO ensure headers and values are stripped
     case lists:keyfind(Hdr, 1, Hdrs) of
 	false ->
-	    Default;
+	    undefined;
 	{Hdr, Value} ->
 	    Value
     end.
@@ -229,48 +212,6 @@ close_to_lower($S) ->
 close_to_lower($E) ->
     $e;
 close_to_lower(C) ->
-    C.
-
-is_keep_alive(<<"close">>) ->
-    false;
-is_keep_alive(<<"Close">>) ->
-    false;
-is_keep_alive(<<"keep-alive">>) ->
-    true;
-is_keep_alive(<<"Keep-Alive">>) ->
-    true;
-is_keep_alive(C) ->
-    is_keep_alive(C, "keep-alive").
-
-is_keep_alive(<<C, Rest1/bits>>, [C | Rest2]) ->
-    is_keep_alive(Rest1, Rest2);
-is_keep_alive(<<C1, Rest1/bits>>, [C2 | Rest2]) ->
-    case keep_to_lower(C1) == C2 of
-	true ->
-	    is_keep_alive(Rest1, Rest2);
-	false ->
-	    false
-    end;
-is_keep_alive(<<>>, _) ->
-    false;
-is_keep_alive(_, []) ->
-    false.
-
-keep_to_lower($K) ->
-    $k;
-keep_to_lower($E) ->
-    $e;
-keep_to_lower($P) ->
-    $p;
-keep_to_lower($A) ->
-    $a;
-keep_to_lower($L) ->
-    $l;
-keep_to_lower($I) ->
-    $i;
-keep_to_lower($V) ->
-    $v;
-keep_to_lower(C) ->
     C.
 
 %%------------------------------------------------------------------------------

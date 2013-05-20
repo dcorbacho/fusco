@@ -491,7 +491,7 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             %% 100 (Continue) status message. Unexpected 1xx
             %% status responses MAY be ignored by a user agent.
             read_response(State);
-	{Vsn, Status, Reason, NewCookies, NewHdrs, Body} ->
+	{Vsn, Status, Reason, NewCookies, NewHdrs, Connection, Body} ->
 	    gen_server:reply(From, {ok, {{Status, Reason}, NewHdrs, Body}}),
 	    FinalCookies =
 		case UseCookies of
@@ -500,7 +500,7 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 		    _ ->
 			[]
 		end,
-	    NewSocket = maybe_close_socket(State, Vsn, ReqHdrs, NewHdrs),
+	    NewSocket = maybe_close_socket(State, Vsn, ReqHdrs, Connection),
 	    {noreply,
 	     State#client_state{socket = NewSocket,
 				cookies = FinalCookies}};
@@ -521,19 +521,14 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 %% @private
 %%------------------------------------------------------------------------------
 maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ReqHdrs,
-		   RespHdrs) ->
+		   Connection) ->
     ClientConnection = case lists:keyfind(<<"connection">>, 1, ReqHdrs) of
 			   false ->
 			       false;
 			   {_, Value} ->
 			       lhttpc_lib:is_close(Value)
 		       end,
-    ServerConnection = case lists:keyfind(<<"connection">>, 1, RespHdrs) of
-			   false ->
-			       false;
-			   {_, Value2} ->
-			       lhttpc_lib:is_close(Value2)
-		       end,
+    ServerConnection = (Connection == <<"close">>),
     if
         ClientConnection orelse ServerConnection ->
             lhttpc_sock:close(Socket, State#client_state.ssl),
@@ -541,19 +536,14 @@ maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ReqHdrs,
         (not ClientConnection) andalso (not ServerConnection) ->
             Socket
     end;
-maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, RespHdrs) ->
+maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, Connection) ->
     ClientConnection = case lists:keyfind(<<"connection">>, 1, ReqHdrs) of
 			   false ->
 			       false;
 			   {_, Value} ->
 			       lhttpc_lib:is_close(Value)
 		       end,
-    ServerConnection = case lists:keyfind(<<"connection">>, 1, RespHdrs) of
-			   false ->
-			       false;
-			   {_, Value2} ->
-			       lhttpc_lib:is_keep_alive(Value2)
-		       end,
+    ServerConnection = (Connection == <<"keep-alive">>),
     if
         ClientConnection orelse (not ServerConnection) ->
             lhttpc_sock:close(Socket, State#client_state.ssl),

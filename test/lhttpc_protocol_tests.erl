@@ -18,7 +18,7 @@ lhttpc_protocol_test_() ->
 http_version() ->
     L = {_, _, Socket} = test_utils:start_listener(cookie_message()),
     test_utils:send_message(Socket),
-    ?assertMatch({{1,1}, <<"200">>, <<"OK">>, _, _, <<"Great success!">>},
+    ?assertMatch({{1,1}, <<"200">>, <<"OK">>, _, _, _, <<"Great success!">>},
 		 lhttpc_protocol:recv(Socket, false)),
     test_utils:stop_listener(L).
 
@@ -31,6 +31,7 @@ cookies() ->
 		  _,
 		  [{<<"set-cookie">>,<<"name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT">>},
 		   {<<"set-cookie">>,<<"name=value">>} | _],
+		  _,
 		  <<"Great success!">>},
 		 Recv).
 
@@ -41,6 +42,7 @@ decode_header() ->
 		   {<<"set-cookie">>,<<"name=value">>},
 		   {<<"content-length">>, <<"14">>},
 		   {<<"content-type">>,<<"text/plain">>}],
+		  _,
 		  <<"Great success!">>},
 		 test_decode_header()).
 
