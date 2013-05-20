@@ -64,7 +64,6 @@
         connect_options = [] :: [any()],
         %% next fields are specific to particular requests
         request :: iolist() | undefined,
-        method :: string(),
         request_headers :: headers(),
         requester,
         cookies = [] :: [#lhttpc_cookie{}],
@@ -75,8 +74,7 @@
         proxy :: undefined | #lhttpc_url{},
         proxy_ssl_options = [] :: [any()],
         proxy_setup = false :: boolean(),
-	host_header,
-	from
+	host_header
         }).
 
 %%==============================================================================
@@ -286,15 +284,13 @@ handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl},
 	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
     NewState =
 	State#client_state{
-	  method = Method,
 	  request = Request,
 	  requester = From,
 	  request_headers = Hdrs,
 	  attempts = SendRetry,
 	  proxy = Proxy,
 	  proxy_setup = (Socket /= undefined),
-	  proxy_ssl_options = ProxySsl,
-	  from = From},
+	  proxy_ssl_options = ProxySsl},
     send_request(NewState).
 
 %%--------------------------------------------------------------------
@@ -482,7 +478,7 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
 -spec read_response(#client_state{}) -> {any(), socket()} | no_return().
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
                             request_headers = ReqHdrs, cookies = Cookies,
-			    from = From} = State) ->
+			    requester = From} = State) ->
     case lhttpc_protocol:recv(Socket, Ssl) of
 	{_Vsn, <<$1,_,_>>, _Reason, _Cookies, _Hdrs, _Body} ->
 	    %% RFC 2616, section 10.1:
