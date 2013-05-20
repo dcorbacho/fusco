@@ -270,27 +270,30 @@ handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl},
             State = #client_state{ssl = Ssl, host_header = Host,
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
-    Proxy = case ProxyInfo of
-		false ->
-		    undefined;
-		{proxy, ProxyUrl} when is_list(ProxyUrl), not Ssl ->
-		    %% The point of HTTP CONNECT proxying is to use TLS tunneled in
-		    %% a plain HTTP/1.1 connection to the proxy (RFC2817).
-		    throw(origin_server_not_https);
-		{proxy, ProxyUrl} when is_list(ProxyUrl) ->
-		    lhttpc_lib:parse_url(ProxyUrl)
-	    end,
     Request =
 	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
-    NewState =
-	State#client_state{
-	  request = Request,
-	  requester = From,
-	  request_headers = Hdrs,
-	  attempts = SendRetry,
-	  proxy = Proxy,
-	  proxy_setup = (Socket /= undefined),
-	  proxy_ssl_options = ProxySsl},
+    NewState = case ProxyInfo of
+		   false ->
+		       State#client_state{
+			 request = Request,
+			 requester = From,
+			 request_headers = Hdrs,
+			 attempts = SendRetry,
+			 proxy = undefined};
+		   {proxy, ProxyUrl} when is_list(ProxyUrl), not Ssl ->
+		       %% The point of HTTP CONNECT proxying is to use TLS tunneled in
+		       %% a plain HTTP/1.1 connection to the proxy (RFC2817).
+		       throw(origin_server_not_https);
+		   {proxy, ProxyUrl} when is_list(ProxyUrl) ->
+		       State#client_state{
+			 request = Request,
+			 requester = From,
+			 request_headers = Hdrs,
+			 attempts = SendRetry,
+			 proxy = lhttpc_lib:parse_url(ProxyUrl),
+			 proxy_setup = (Socket /= undefined),
+			 proxy_ssl_options = ProxySsl}			   		       
+	       end,
     send_request(NewState).
 
 %%--------------------------------------------------------------------
