@@ -473,6 +473,9 @@ cookie_string(#lhttpc_cookie{name = Name, value = Value}) ->
 %% @private
 %%------------------------------------------------------------------------------
 -spec add_content_headers(string(), headers(), iolist()) -> headers().
+add_content_headers(Method, [], Body) when Method == "POST"; Method == "PUT"->
+    ContentLength = integer_to_list(iolist_size(Body)),
+    [{<<"Content-Length">>, ContentLength}];
 add_content_headers(Method, Hdrs, Body) when Method == "POST"; Method == "PUT"->
     case header_value(<<"content-length">>, Hdrs) of
         undefined ->
@@ -490,6 +493,8 @@ add_content_headers(_, Hdrs, _) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec add_host(headers(), host()) -> headers().
+add_host([], Host) ->
+    [{<<"Host">>, Host}];
 add_host(Hdrs, Host) ->
     case header_value(<<"host">>, Hdrs) of
         undefined ->
