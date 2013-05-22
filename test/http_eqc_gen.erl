@@ -27,7 +27,6 @@ entity_header() ->
     [{<<"Allow">>, small_valid_bin()},
      {<<"Content-Encoding">>, small_valid_bin()},
      {<<"Content-Language">>, small_valid_bin()},
-     {<<"Content-Length">>, small_valid_bin()},
      {<<"Content-Location">>, small_valid_bin()},
      {<<"Content-MD5">>, small_valid_bin()},
      {<<"Content-Range">>, small_valid_bin()},

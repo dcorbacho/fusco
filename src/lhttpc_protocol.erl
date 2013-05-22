@@ -10,7 +10,7 @@
 -include("lhttpc.hrl").
 
 -record(state, {socket, ssl, version, status_code, reason, headers = [],
-		connection, cookies = []}).
+		connection, cookies = [], content_length = 0}).
 
 %% API
 -export([recv/2,
@@ -39,14 +39,27 @@ decode_status_line(<<"HTTP/1.0\s", Rest/bits>>, State) ->
 decode_status_line(<<"HTTP/1.1\s", Rest/bits>>, State) ->
     decode_status_code(Rest, State#state{version = {1,1}});
 decode_status_line(_, _) ->
-    {error, 400}.
+    {error, status_line}.
 
-decode_status_code(<<C1,C2,C3,$\s,Rest/bits>>, State)
-  when C1 >= $1, C1 =< $5 ->
+decode_status_code(<<C1,C2,C3,$\s,Rest/bits>>, State) ->
     decode_reason_phrase(Rest, <<>>, State#state{status_code = <<C1,C2,C3>>});
+decode_status_code(Bin, State) when byte_size(Bin) < 3 ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_status_code(<<Bin/binary, Data/binary>>, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;    
 decode_status_code(_, _) ->
-    {error, 400}.
+    {error, status_code}.
 
+decode_reason_phrase(<<>>, Acc, State) ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_reason_phrase(Data, Acc, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;
 decode_reason_phrase(<<"\n", Rest/bits>>, Acc, State) ->
     decode_header(Rest, <<>>, State#state{reason = Acc});
 decode_reason_phrase(<<"\r\n", Rest/bits>>, Acc, State) ->
@@ -77,7 +90,7 @@ decode_header(<<$\r,$\n, Rest/bits>>, <<>>,
 decode_header(<<$\r, $\n, Rest/bits>>, <<>>, State) ->
     decode_body(Rest, State);
 decode_header(<<$\r, $\n, _Rest/bits>>, _, _State) ->
-    {error, 400};
+    {error, header};
 decode_header(<<$A, Rest/bits>>, Header, State) ->
     decode_header(Rest, <<Header/binary, $a>>, State);
 decode_header(<<$B, Rest/bits>>, Header, State) ->
@@ -149,6 +162,16 @@ decode_header_value(<<>>, H, V, T, State) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
+decode_header_value(<<$\r>>, H, V, T, State) ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_header_value(<<$\r, Data/binary>>, H, V, T, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;
+decode_header_value(<<$\n, Rest/bits>>, <<"content-length">> = H, V, _T, State) ->
+    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+					  content_length = list_to_integer(binary_to_list(V))});
 decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, State) ->
     decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
 						     | State#state.cookies],
@@ -159,6 +182,9 @@ decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, State)
     decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
 						     | State#state.cookies],
 					  headers = [{H, V} | State#state.headers]});
+decode_header_value(<<$\r,$\n, Rest/bits>>, <<"content-length">> = H, V, _T, State) ->
+    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+					  content_length = list_to_integer(binary_to_list(V))});
 decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, _T, State) ->
     decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
 decode_header_value(<<$\s, Rest/bits>>, H, V, T, State) ->
@@ -348,7 +374,17 @@ decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
     decode_cookie_av_value(Rest, Co, AV, <<Value/binary, C>>).
 
 decode_body(Rest, State) ->
-    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, State#state.connection, Rest}.
+    case byte_size(Rest) >= State#state.content_length of
+	true ->
+	    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, State#state.connection, Rest};
+	false ->
+	    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+		{ok, Data} ->
+		    decode_body(<<Rest/binary, Data/binary>>, State);
+		{error, Reason} ->
+		    {error, Reason}
+	    end
+    end.
 
 max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.

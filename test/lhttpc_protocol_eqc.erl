@@ -16,12 +16,15 @@ prop_http_response() ->
 	    {http_eqc_gen:status_line(), http_eqc_gen:headers(),
 	     list(http_eqc_gen:set_cookie()), http_eqc_gen:body()},
 	    begin
-		Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
-		L = {_, _, Socket} = test_utils:start_listener(Msg),
-		test_utils:send_fragmented_message(Socket),
+		ContentLength = list_to_binary(integer_to_list(byte_size(Body))),
+		FinalHeaders = [{<<"Content-Length">>, ContentLength}
+				| Headers],
+		Msg = build_valid_message(StatusLine, FinalHeaders, Cookies, Body),
+		L = {_, _, Socket} = test_utils:start_listener({fragmented, Msg}),
+		test_utils:send_message(Socket),
 		Recv = lhttpc_protocol:recv(Socket, false),
 		test_utils:stop_listener(L),
-		Expected = expected_output(StatusLine, Headers, Cookies, Body),
+		Expected = expected_output(StatusLine, FinalHeaders, Cookies, Body),
 		Cleared = clear_connection(clear_timestamps(Recv)),
 		?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
 				    " ~p~nCleared: ~p~nExpected: ~p~n",
