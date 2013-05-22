@@ -8,9 +8,11 @@
 
 -export([start_listener/1,
 	 send_message/1,
+	 send_fragmented_message/1,
 	 stop_listener/1]).
 
 start_listener(Msg) ->
+    random:seed(erlang:now()),
     {ok, Listener, LS, Port} = webserver:start(gen_tcp, [user_response(Msg)]),
     {ok, Socket} = gen_tcp:connect("127.0.0.1", Port, [binary, {packet, raw},
 						       {nodelay, true},
@@ -20,6 +22,18 @@ start_listener(Msg) ->
 
 send_message(Socket) ->
     gen_tcp:send(Socket, message()).
+
+send_fragmented_message(Socket) ->
+    send_fragmented_message(Socket, message()).
+
+send_fragmented_message(Socket, <<>>) ->
+    ok;
+send_fragmented_message(Socket, Msg) ->
+    Length = erlang:byte_size(Msg),
+    R = random:uniform(Length),
+    Bin = binary:part(Msg, 0, R),
+    gen_tcp:send(Socket, Bin),
+    send_fragmented_message(Socket, binary:part(Msg, R, erlang:byte_size(Msg) - R)).
 
 user_response(Message) ->
     fun(Module, Socket, _, _, _) ->

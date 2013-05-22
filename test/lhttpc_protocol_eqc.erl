@@ -18,7 +18,7 @@ prop_http_response() ->
 	    begin
 		Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
 		L = {_, _, Socket} = test_utils:start_listener(Msg),
-		test_utils:send_message(Socket),
+		test_utils:send_fragmented_message(Socket),
 		Recv = lhttpc_protocol:recv(Socket, false),
 		test_utils:stop_listener(L),
 		Expected = expected_output(StatusLine, Headers, Cookies, Body),
