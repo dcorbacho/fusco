@@ -11,32 +11,61 @@
 
 -export([prop_http_response/0]).
 
-prop_http_response() ->
-    ?FORALL({StatusLine, Headers, Cookies, Body},
-	    {http_eqc_gen:status_line(), http_eqc_gen:headers(),
-	     list(http_eqc_gen:set_cookie()), http_eqc_gen:body()},
-	    begin
-		ContentLength = list_to_binary(integer_to_list(byte_size(Body))),
-		FinalHeaders = [{<<"Content-Length">>, ContentLength}
-				| Headers],
-		Msg = build_valid_message(StatusLine, FinalHeaders, Cookies, Body),
-		L = {_, _, Socket} = test_utils:start_listener({fragmented, Msg}),
-		test_utils:send_message(Socket),
-		Recv = lhttpc_protocol:recv(Socket, false),
-		test_utils:stop_listener(L),
-		Expected = expected_output(StatusLine, FinalHeaders, Cookies, Body),
-		Cleared = clear_connection(clear_timestamps(Recv)),
-		?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
-				    " ~p~nCleared: ~p~nExpected: ~p~n",
-				    [binary:list_to_bin(Msg), Recv, Cleared, Expected]),
-			  case Cleared of
-			      Expected ->
-				  true;
-			      _ ->
-				  false
-			  end)
-	    end).
+%%==============================================================================
+%% Quickcheck generators
+%%==============================================================================
+valid_http_message() ->
+    ?LET({StatusLine, Headers, Cookies},
+	 {http_eqc_gen:status_line(), http_eqc_gen:headers(),
+	  list(http_eqc_gen:set_cookie())},
+	 ?LET(Body, body(StatusLine),
+	      {StatusLine, add_content_length(Headers, Body), Cookies, Body})).
 
+add_content_length(Headers, <<>>) ->
+    Headers;
+add_content_length(Headers, Body) ->
+    ContentLength = list_to_binary(integer_to_list(byte_size(Body))),
+    [{<<"Content-Length">>, ContentLength} | Headers].
+
+body({_, <<$1, _, _>>, _}) ->
+    <<>>;
+body({_, <<$2,$0,$4>>, _}) ->
+    <<>>;
+body({_, <<$3,$0,$4>>, _}) ->
+    <<>>;
+body(_) ->
+    http_eqc_gen:body().
+
+%%==============================================================================
+%% Quickcheck properties
+%%==============================================================================
+prop_http_response() ->
+    eqc:numtests(
+      500,
+      ?FORALL({StatusLine, Headers, Cookies, Body},
+	      valid_http_message(),
+	      begin
+		  Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
+		  L = {_, _, Socket} = test_utils:start_listener({fragmented, Msg}),
+		  test_utils:send_message(Socket),
+		  Recv = lhttpc_protocol:recv(Socket, false),
+		  test_utils:stop_listener(L),
+		  Expected = expected_output(StatusLine, Headers, Cookies, Body),
+		  Cleared = clear_connection(clear_timestamps(Recv)),
+		  ?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
+				      " ~p~nCleared: ~p~nExpected: ~p~n",
+				      [binary:list_to_bin(Msg), Recv, Cleared, Expected]),
+			    case Cleared of
+				Expected ->
+				    true;
+				_ ->
+				    false
+			    end)
+	      end)).
+
+%%==============================================================================
+%% Internal functions
+%%==============================================================================
 build_valid_message({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body) ->
     SL = [HttpVersion, sp(), StatusCode, sp(), Reason, crlf()],
     HS = [[Name, colon(), Value, crlf()] || {Name, Value} <- Headers],
@@ -92,11 +121,15 @@ months() ->
      {"May", 5}, {"Jun", 6}, {"Jul", 7}, {"Aug", 8},
      {"Sep", 9}, {"Oct", 10}, {"Nov", 11}, {"Dec", 12}].
 
-clear_timestamps({V, S, R, C, H, Co, B}) ->
-    {V, S, R, [Co#lhttpc_cookie{timestamp=undefined} || Co <- C], H, to_lower(Co), B}.
+clear_timestamps({V, S, R, C, H, Con, B}) ->
+    {V, S, R, [Co#lhttpc_cookie{timestamp=undefined} || Co <- C], H, to_lower(Con), B};
+clear_timestamps(Error) ->
+    Error.
 
 clear_connection({V, S, R, C, H, Co, B}) ->
-    {V, S, R, C, H, to_lower(Co), B}.
+    {V, S, R, C, H, to_lower(Co), B};
+clear_connection(Error) ->
+    Error.
 
 colon() ->
     <<$:>>.

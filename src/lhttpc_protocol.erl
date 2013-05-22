@@ -38,12 +38,19 @@ decode_status_line(<<"HTTP/1.0\s", Rest/bits>>, State) ->
     decode_status_code(Rest, State#state{version = {1,0}});
 decode_status_line(<<"HTTP/1.1\s", Rest/bits>>, State) ->
     decode_status_code(Rest, State#state{version = {1,1}});
+decode_status_line(Bin, State) when byte_size(Bin) < 10 ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_status_line(<<Bin/binary, Data/binary>>, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;    
 decode_status_line(_, _) ->
     {error, status_line}.
 
 decode_status_code(<<C1,C2,C3,$\s,Rest/bits>>, State) ->
     decode_reason_phrase(Rest, <<>>, State#state{status_code = <<C1,C2,C3>>});
-decode_status_code(Bin, State) when byte_size(Bin) < 3 ->
+decode_status_code(Bin, State) when byte_size(Bin) < 4 ->
     case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
 	{ok, Data} ->
 	    decode_status_code(<<Bin/binary, Data/binary>>, State);
@@ -60,6 +67,13 @@ decode_reason_phrase(<<>>, Acc, State) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
+decode_reason_phrase(<<$\r>>, Acc, State) ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_reason_phrase(<<$\r, Data/binary>>, Acc, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;
 decode_reason_phrase(<<"\n", Rest/bits>>, Acc, State) ->
     decode_header(Rest, <<>>, State#state{reason = Acc});
 decode_reason_phrase(<<"\r\n", Rest/bits>>, Acc, State) ->
@@ -71,6 +85,20 @@ decode_header(<<>>, Acc, State) ->
     case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
 	{ok, Data} ->
 	    decode_header(Data, Acc, State);
+	{error, closed} ->
+	    case Acc of
+		<<>> ->
+		    decode_body(<<>>, State);
+		_ ->
+		    {error, closed}
+	    end;
+	{error, Reason} ->
+	    {error, Reason}
+    end;
+decode_header(<<$\r>>, Acc, State) ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_header(<<$\r, Data/binary>>, Acc, State);
 	{error, Reason} ->
 	    {error, Reason}
     end;
@@ -80,13 +108,6 @@ decode_header(<<$:, Rest/bits>>, Header, State) ->
     decode_header_value_ws(Rest, Header, State);
 decode_header(<<$\n, Rest/bits>>, <<>>, State) ->
     decode_body(Rest, State);
-decode_header(<<$\r,$\n>>, <<>>, State = #state{status_code = <<$1, _, _>>}) ->
-    decode_body(<<>>, State);
-decode_header(<<$\r,$\n, Rest/bits>>, <<>>,
-	      State = #state{status_code = <<$1, _, _>>,
-			     headers = []}) ->
-    decode_status_line(Rest, #state{socket = State#state.socket,
-				    ssl = State#state.ssl});
 decode_header(<<$\r, $\n, Rest/bits>>, <<>>, State) ->
     decode_body(Rest, State);
 decode_header(<<$\r, $\n, _Rest/bits>>, _, _State) ->
@@ -200,6 +221,13 @@ decode_header_value_lc(<<>>, H, V, T, State) ->
     case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
 	{ok, Data} ->
 	    decode_header_value_lc(Data, H, V, T, State);
+	{error, Reason} ->
+	    {error, Reason}
+    end;
+decode_header_value_lc(<<$\r>>, H, V, T, State) ->
+    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	{ok, Data} ->
+	    decode_header_value_lc(<<$\r, Data/binary>>, H, V, T, State);
 	{error, Reason} ->
 	    {error, Reason}
     end;
@@ -373,18 +401,30 @@ decode_cookie_av_value(<<$;, Rest/bits>>, Co, _, _) ->
 decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
     decode_cookie_av_value(Rest, Co, AV, <<Value/binary, C>>).
 
+
+decode_body(<<>>, State = #state{status_code = <<$1, _, _>>}) ->
+    return(<<>>, State);
+decode_body(Rest, State = #state{status_code = <<$1, _, _>>}) ->
+    decode_status_line(Rest, #state{socket = State#state.socket,
+				    ssl = State#state.ssl});
+decode_body(<<$\r, $\n, Rest/bits>>, State) ->
+    decode_body(Rest, State);
 decode_body(Rest, State) ->
     case byte_size(Rest) >= State#state.content_length of
 	true ->
-	    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, State#state.connection, Rest};
+	    return(Rest, State);
 	false ->
 	    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
 		{ok, Data} ->
 		    decode_body(<<Rest/binary, Data/binary>>, State);
-		{error, Reason} ->
-		    {error, Reason}
+		_ ->
+		    %% NOTE: Return what we have so far
+		    return(Rest, State)
 	    end
     end.
+
+return(Rest, State) ->
+    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, State#state.connection, Rest}.
 
 max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.
