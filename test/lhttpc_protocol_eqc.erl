@@ -22,7 +22,7 @@ prop_http_response() ->
 		Recv = lhttpc_protocol:recv(Socket, false),
 		test_utils:stop_listener(L),
 		Expected = expected_output(StatusLine, Headers, Cookies, Body),
-		Cleared = clear_timestamps(Recv),
+		Cleared = clear_connection(clear_timestamps(Recv)),
 		?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
 				    " ~p~nCleared: ~p~nExpected: ~p~n",
 				    [binary:list_to_bin(Msg), Recv, Cleared, Expected]),
@@ -91,6 +91,9 @@ months() ->
 
 clear_timestamps({V, S, R, C, H, Co, B}) ->
     {V, S, R, [Co#lhttpc_cookie{timestamp=undefined} || Co <- C], H, to_lower(Co), B}.
+
+clear_connection({V, S, R, C, H, Co, B}) ->
+    {V, S, R, C, H, to_lower(Co), B}.
 
 colon() ->
     <<$:>>.

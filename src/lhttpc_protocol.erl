@@ -189,24 +189,56 @@ decode_header_value_lc(<<$\t, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, V, <<T/binary, $\t>>, State);
 decode_header_value_lc(<<$A, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $a>>, <<>>, State);
+decode_header_value_lc(<<$B, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $b>>, <<>>, State);
 decode_header_value_lc(<<$C, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $c>>, <<>>, State);
+decode_header_value_lc(<<$D, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $d>>, <<>>, State);
 decode_header_value_lc(<<$E, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $e>>, <<>>, State);
+decode_header_value_lc(<<$F, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $f>>, <<>>, State);
+decode_header_value_lc(<<$G, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $g>>, <<>>, State);
+decode_header_value_lc(<<$H, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $h>>, <<>>, State);
 decode_header_value_lc(<<$I, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $i>>, <<>>, State);
+decode_header_value_lc(<<$J, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $j>>, <<>>, State);
 decode_header_value_lc(<<$K, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $k>>, <<>>, State);
 decode_header_value_lc(<<$L, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $l>>, <<>>, State);
+decode_header_value_lc(<<$M, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $m>>, <<>>, State);
+decode_header_value_lc(<<$N, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $n>>, <<>>, State);
 decode_header_value_lc(<<$O, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $o>>, <<>>, State);
 decode_header_value_lc(<<$P, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $p>>, <<>>, State);
+decode_header_value_lc(<<$Q, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $q>>, <<>>, State);
+decode_header_value_lc(<<$R, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $r>>, <<>>, State);
 decode_header_value_lc(<<$S, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $s>>, <<>>, State);
+decode_header_value_lc(<<$T, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $t>>, <<>>, State);
+decode_header_value_lc(<<$U, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $u>>, <<>>, State);
 decode_header_value_lc(<<$V, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, $v>>, <<>>, State);
+decode_header_value_lc(<<$W, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $w>>, <<>>, State);
+decode_header_value_lc(<<$X, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $x>>, <<>>, State);
+decode_header_value_lc(<<$Y, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $y>>, <<>>, State);
+decode_header_value_lc(<<$Z, Rest/bits>>, H, V, T, State) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $z>>, <<>>, State);
 decode_header_value_lc(<<C, Rest/bits>>, H, V, T, State) ->
     decode_header_value_lc(Rest, H, <<V/binary, T/binary, C>>, <<>>, State).
 
