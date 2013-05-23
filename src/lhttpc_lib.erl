@@ -121,11 +121,10 @@ parse_url(URL) ->
 -spec format_request(iolist(), method(), headers(), string(),  iolist(),
                      {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
 format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
-    AllHdrs = add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, Cookies),
-    Formatted = [[Header, <<": ">>, Value, ?HTTP_LINE_END]
-		 || {Header, Value} <- AllHdrs],
-    [Method, <<" ">>, Path, <<" HTTP/1.1">>, ?HTTP_LINE_END, Formatted,
-     ?HTTP_LINE_END, Body].
+    {AllHdrs, ConHdr} =
+	add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, Cookies),
+    {[Method, <<" ">>, Path, <<" HTTP/1.1">>, ?HTTP_LINE_END, AllHdrs,
+      ?HTTP_LINE_END, Body], ConHdr}.
 
 %%------------------------------------------------------------------------------
 %% @doc
@@ -168,8 +167,10 @@ update_cookies(ReceivedCookies, StateCookies) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec to_lower(string()) -> string().
-to_lower(String) ->
-    [char_to_lower(X) || X <- String].
+to_lower(String) when is_list(String) ->
+    [char_to_lower(X) || X <- String];
+to_lower(Bin) ->
+    << <<(char_to_lower(B))>> || <<B>> <= Bin >>.
 
 %%------------------------------------------------------------------------------
 %% @doc Compares header values to pre-defined values
@@ -360,11 +361,13 @@ split_port(Scheme, [P | T], Port) ->
 -spec add_mandatory_hdrs(string(), method(), headers(), host(),
                          iolist(), {boolean(), [#lhttpc_cookie{}]}) -> headers().
 add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {_, []}) ->
-    add_host(add_content_headers(Method, Hdrs, Body), Host);    
+    add_headers(Hdrs, Method, Body, Host, undefined, []);
 add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {false, _}) ->
-    add_host(add_content_headers(Method, Hdrs, Body), Host);    
+    add_headers(Hdrs, Method, Body, Host, undefined, []);
 add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, {true, Cookies}) ->
-    ContentHdrs = add_content_headers(Method, Hdrs, Body),
+    Result = {ContentHdrs, ConHdr} =
+	add_headers(Hdrs, Method, Body, Host, undefined, []),
+
     %% only include cookies if the cookie path is a prefix of the request path
     %% see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
     %% TODO optimize cookie handling
@@ -381,18 +384,16 @@ add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, {true, Cookies}) ->
 	   end, Cookies)
     of
 	[] ->
-	    FinalHdrs = ContentHdrs;
+	    Result;
 	IncludeCookies ->
-	    FinalHdrs = add_cookie_headers(Hdrs, IncludeCookies)
-    end,
-    add_host(FinalHdrs, Host).
-
+	    {add_cookie_headers(ContentHdrs, IncludeCookies), ConHdr}
+    end.
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
 add_cookie_headers(Hdrs, Cookies) ->
-    CookieString = make_cookie_string(Cookies, []),
-    [{<<"Cookie">>, CookieString} | Hdrs].
+    [[<<"Cookie: ">>, make_cookie_string(Cookies, []), ?HTTP_LINE_END]
+     | Hdrs].
 
 %%------------------------------------------------------------------------------
 %% @private
@@ -413,35 +414,42 @@ cookie_string(#lhttpc_cookie{name = Name, value = Value}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
--spec add_content_headers(string(), headers(), iolist()) -> headers().
-add_content_headers(Method, [], Body) when Method == "POST"; Method == "PUT"->
+add_headers([], Method, Body, Host, Connection, Headers) when Method == "POST";
+							      Method == "PUT" ->
     ContentLength = integer_to_list(iolist_size(Body)),
-    [{<<"Content-Length">>, ContentLength}];
-add_content_headers(Method, Hdrs, Body) when Method == "POST"; Method == "PUT"->
-    case header_value(<<"content-length">>, Hdrs) of
-        undefined ->
-            ContentLength = integer_to_list(iolist_size(Body)),
-            [{<<"Content-Length">>, ContentLength} | Hdrs];
-        _ -> % We have a content length
-            Hdrs
+    case Host of
+	undefined ->
+	    {[[<<"Content-Length: ">>, ContentLength, ?HTTP_LINE_END]
+	      | Headers], Connection};
+	_ ->
+	    {[[<<"Content-Length: ">>, ContentLength, ?HTTP_LINE_END],
+	      [<<"Host: ">>, Host, ?HTTP_LINE_END] | Headers], Connection}
     end;
-add_content_headers(_, Hdrs, _) ->
-    Hdrs.
-
-%%------------------------------------------------------------------------------
-%% @private
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec add_host(headers(), host()) -> headers().
-add_host([], Host) ->
-    [{<<"Host">>, Host}];
-add_host(Hdrs, Host) ->
-    case header_value(<<"host">>, Hdrs) of
-        undefined ->
-            [{<<"Host">>, Host} | Hdrs];
-        _ -> % We have a host
-            Hdrs
+add_headers([], _Method, _Body, Host, Connection, Headers) ->
+    case Host of
+	undefined ->
+	    {Headers, Connection};
+	_ ->
+	    {[[<<"Host: ">>, Host, ?HTTP_LINE_END] | Headers], Connection}
+    end;
+add_headers([{H, V} | T], undefined, undefined, undefined, Connection, Acc)
+  when Connection =/= undefined ->
+    add_headers(T, undefined, undefined, undefined, Connection,
+		[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+add_headers([{H, V} | T], Method, Body, Host, Connection, Acc) ->
+    case to_lower(H) of
+	<<"connection">> ->
+	    add_headers(T, Method, Body, Host, V,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+	<<"host">> ->
+	    add_headers(T, Method, Body, undefined, Connection,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+	<<"content-length">> ->
+	    add_headers(T, undefined, undefined, Host, Connection,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+	_ ->
+	    add_headers(T, Method, Body, Host, Connection,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc])
     end.
 
 %%------------------------------------------------------------------------------

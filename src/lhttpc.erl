@@ -64,7 +64,7 @@
         connect_options = [] :: [any()],
         %% next fields are specific to particular requests
         request :: iolist() | undefined,
-        request_headers :: headers(),
+	connection_header,
         requester,
         cookies = [] :: [#lhttpc_cookie{}],
         use_cookies = false :: boolean(),
@@ -270,14 +270,14 @@ handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl},
             State = #client_state{ssl = Ssl, host_header = Host,
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
-    Request =
+    {Request, ConHeader} =
 	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
     NewState = case ProxyInfo of
 		   false ->
 		       State#client_state{
 			 request = Request,
 			 requester = From,
-			 request_headers = Hdrs,
+			 connection_header = ConHeader,
 			 attempts = SendRetry,
 			 proxy = undefined};
 		   {proxy, ProxyUrl} when is_list(ProxyUrl), not Ssl ->
@@ -288,7 +288,7 @@ handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl},
 		       State#client_state{
 			 request = Request,
 			 requester = From,
-			 request_headers = Hdrs,
+			 connection_header = ConHeader,
 			 attempts = SendRetry,
 			 proxy = lhttpc_lib:parse_url(ProxyUrl),
 			 proxy_setup = (Socket /= undefined),
@@ -480,7 +480,7 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
 %%------------------------------------------------------------------------------
 -spec read_response(#client_state{}) -> {any(), socket()} | no_return().
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
-                            request_headers = ReqHdrs, cookies = Cookies,
+                            connection_header = ConHdr, cookies = Cookies,
 			    requester = From} = State) ->
     case lhttpc_protocol:recv(Socket, Ssl) of
 	{_Vsn, <<$1,_,_>>, _Reason, _Cookies, _Hdrs, _Body} ->
@@ -493,7 +493,7 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             read_response(State);
 	{Vsn, Status, Reason, NewCookies, NewHdrs, Connection, Body} ->
 	    gen_server:reply(From, {ok, {{Status, Reason}, NewHdrs, Body}}),
-	    case maybe_close_socket(State, Vsn, ReqHdrs, Connection) of
+	    case maybe_close_socket(State, Vsn, ConHdr, Connection) of
 		undefined ->
 		    case UseCookies of
 			true ->
@@ -531,13 +531,10 @@ maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, _, <<"close">
     undefined;
 maybe_close_socket(#client_state{socket = Socket}, {1, 1}, [], _) ->
     Socket;
-maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ReqHdrs, _) ->
-    ClientConnection = case lists:keyfind(<<"connection">>, 1, ReqHdrs) of
-			   false ->
-			       false;
-			   {_, Value} ->
-			       lhttpc_lib:is_close(Value)
-		       end,
+maybe_close_socket(#client_state{socket = Socket}, {1, 1}, undefined, _) ->
+    Socket;
+maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ConHdr, _) ->
+    ClientConnection = lhttpc_lib:is_close(ConHdr),
     if
         ClientConnection ->
             lhttpc_sock:close(Socket, State#client_state.ssl),
@@ -551,13 +548,10 @@ maybe_close_socket(#client_state{socket = Socket} = State, _, _, C)
   when C =/= <<"keep-alive">> ->
     lhttpc_sock:close(Socket, State#client_state.ssl),
     undefined;
-maybe_close_socket(#client_state{socket = Socket} = State, _, ReqHdrs, _) ->
-    ClientConnection = case lists:keyfind(<<"connection">>, 1, ReqHdrs) of
-			   false ->
-			       false;
-			   {_, Value} ->
-			       lhttpc_lib:is_close(Value)
-		       end,
+maybe_close_socket(#client_state{socket = Socket}, _, undefined, _) ->
+    Socket;
+maybe_close_socket(#client_state{socket = Socket} = State, _, ConHdr, _) ->
+    ClientConnection = lhttpc_lib:is_close(ConHdr),
     if
         ClientConnection ->
             lhttpc_sock:close(Socket, State#client_state.ssl),

@@ -67,8 +67,7 @@ tcp_test_() ->
                 ?_test(options_content()),
                 ?_test(options_no_content()),
                 ?_test(server_connection_close()),
-%% TODO fix client connection comparison
-%%                ?_test(client_connection_close()),
+                ?_test(client_connection_close()),
                 ?_test(pre_1_1_server_connection()),
                 ?_test(pre_1_1_server_keep_alive()),
                 ?_test(simple_put()),
@@ -90,11 +89,11 @@ ssl_test_() ->
             ]}
     }.
 
-%% options_test() ->
-%%     invalid_options().
+options_test() ->
+    invalid_options().
 
-%% cookies_test() ->
-%%     cookies().
+cookies_test() ->
+    cookies().
 
 %%% Tests
 
@@ -260,15 +259,15 @@ server_connection_close() ->
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)),
     receive closed -> ok end.
 
-%% client_connection_close() ->
-%%     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:respond_and_wait/5]),
-%%     URL = url(Port),
-%%     Body = pid_to_list(self()),
-%%     Hdrs = [{<<"Connection">>, <<"close">>}],
-%%     {ok, Client} = lhttpc:connect(URL, []),
-%%     {ok, _} = lhttpc:request(Client, "/close", "PUT", Hdrs, Body, 1000),
-%%     % Wait for the server to see that socket has been closed
-%%     receive closed -> ok end.
+client_connection_close() ->
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:respond_and_wait/5]),
+    URL = url(Port),
+    Body = pid_to_list(self()),
+    Hdrs = [{<<"Connection">>, <<"close">>}],
+    {ok, Client} = lhttpc:connect(URL, []),
+    {ok, _} = lhttpc:request(Client, "/close", "PUT", Hdrs, Body, 1000),
+    % Wait for the server to see that socket has been closed
+    receive closed -> ok end.
 
 pre_1_1_server_connection() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:pre_1_1_server/5]),
@@ -397,26 +396,26 @@ ssl_post() ->
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(BinaryBody, body(Response)).
 
-%% invalid_options() ->
-%%     ?assertError({bad_option, bad_option},
-%%         lhttpc:request("http://localhost/", "GET", [], <<>>, 1000,
-%%             [bad_option, {foo, bar}])),
-%%     ?assertError({bad_option, {foo, bar}},
-%%         lhttpc:request("http://localhost/", "GET", [], <<>>, 1000,
-%%             [{foo, bar}, bad_option])).
+invalid_options() ->
+    ?assertError({bad_option, bad_option},
+        lhttpc:request(client, "http://localhost/", "GET", [], <<>>, 1000,
+            [bad_option, {foo, bar}])),
+    ?assertError({bad_option, {foo, bar}},
+        lhttpc:request(client, "http://localhost/", "GET", [], <<>>, 1000,
+            [{foo, bar}, bad_option])).
 
-%% cookies() ->
-%%     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:set_cookie_response/5, fun webserver_utils:expired_cookie_response/5,
-%%             fun webserver_utils:receive_right_cookies/5]),
-%%     URL = url(Port, "/cookies"),
-%%     Options = [{use_cookies, true}],
-%%     {ok, Client} = lhttpc:connect(URL, Options),
-%%     {ok, Response1} = lhttpc:request(Client, URL, "GET", [], 1000),
-%%     ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
-%%     {ok, Response2} = lhttpc:request(Client, URL, "GET", [], 1000),
-%%     ?assertEqual({<<"200">>, <<"OK">>}, status(Response2)),
-%%     {ok, Response3} = lhttpc:request(Client, URL, "GET", [], 1000),
-%%     ?assertEqual({<<"200">>, <<"OK">>}, status(Response3)).
+cookies() ->
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:set_cookie_response/5, fun webserver_utils:expired_cookie_response/5,
+            fun webserver_utils:receive_right_cookies/5]),
+    URL = url(Port),
+    Options = [{use_cookies, true}],
+    {ok, Client} = lhttpc:connect(URL, Options),
+    {ok, Response1} = lhttpc:request(Client, "/cookies", "GET", [], <<>>, 1000),
+    ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
+    {ok, Response2} = lhttpc:request(Client, "/cookies", "GET", [], <<>>, 1000),
+    ?assertEqual({<<"200">>, <<"OK">>}, status(Response2)),
+    {ok, Response3} = lhttpc:request(Client, "/cookies", "GET", [], <<>>, 1000),
+    ?assertEqual({<<"200">>, <<"OK">>}, status(Response3)).
 
 simple(Method) ->
     simple(Method, inet).
