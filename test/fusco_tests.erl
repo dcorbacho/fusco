@@ -168,8 +168,8 @@ get_with_connect_options() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port),
     Options = [{connect_options, [{ip, {127, 0, 0, 1}}, {port, 0}]}],
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/empty", "GET", [], [], 1000, Options),
+    {ok, Client} = fusco:connect(URL, Options),
+    {ok, Response} = fusco:request(Client, "/empty", "GET", [], [], 1, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
@@ -289,8 +289,8 @@ pre_1_1_server_keep_alive() ->
     URL = url(Port),
     Body = pid_to_list(self()),
     {ok, Client} = fusco:connect(URL, []),
-    {ok, Response1} = fusco:request(Client, "/close", "GET", [], [], 1000, []),
-    {ok, Response2} = fusco:request(Client, "/close", "PUT", [], Body, 1000, []),
+    {ok, Response1} = fusco:request(Client, "/close", "GET", [], [], 1000),
+    {ok, Response2} = fusco:request(Client, "/close", "PUT", [], Body, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response2)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response1)),
@@ -346,10 +346,10 @@ persistent_connection() ->
 				   ]),
     URL = url(Port),
     {ok, Client} = fusco:connect(URL, []),
-    {ok, FirstResponse} = fusco:request(Client, "/persistent", "GET", [], [], 1000, []),
+    {ok, FirstResponse} = fusco:request(Client, "/persistent", "GET", [], [], 1, 1000),
     Headers = [{"KeepAlive", "300"}], % shouldn't be needed
-    {ok, SecondResponse} = fusco:request(Client, "/persistent", "GET", Headers, [], 1000, []),
-    {ok, ThirdResponse} = fusco:request(Client, "/persistent", "POST", [], [], 1000, []),
+    {ok, SecondResponse} = fusco:request(Client, "/persistent", "GET", Headers, [], 1, 1000),
+    {ok, ThirdResponse} = fusco:request(Client, "/persistent", "POST", [], [], 1, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(FirstResponse)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(FirstResponse)),
     ?assertEqual({<<"200">>, <<"OK">>}, status(SecondResponse)),
@@ -374,7 +374,7 @@ ssl_get() ->
     {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5]),
     URL = ssl_url(Port),
     {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1000, []),
+    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
@@ -382,7 +382,7 @@ ssl_get_ipv6() ->
     {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5], inet6),
     URL = ssl_url(inet6, Port),
     {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1000, []),
+    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
@@ -392,17 +392,16 @@ ssl_post() ->
     Body = "SSL Test <o/",
     BinaryBody = list_to_binary(Body),
     {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/simple", "POST", [], Body, 1000, []),
+    {ok, Response} = fusco:request(Client, "/simple", "POST", [], Body, 1, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(BinaryBody, body(Response)).
 
 invalid_options() ->
+    URL = url(5050),
     ?assertError({bad_option, bad_option},
-        fusco:request(client, "http://localhost/", "GET", [], <<>>, 1000,
-            [bad_option, {foo, bar}])),
+        fusco:connect(URL, [bad_option, {foo, bar}])),
     ?assertError({bad_option, {foo, bar}},
-        fusco:request(client, "http://localhost/", "GET", [], <<>>, 1000,
-            [{foo, bar}, bad_option])).
+        fusco:connect(URL, [{foo, bar}, bad_option])).
 
 cookies() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:set_cookie_response/5, fun webserver_utils:expired_cookie_response/5,

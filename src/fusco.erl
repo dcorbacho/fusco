@@ -39,7 +39,6 @@
 -export([connect/2,
 	 request/6,
 	 request/7,
-	 request/9,
          disconnect/1]).
 
 %% gen_server callbacks
@@ -73,7 +72,6 @@
         attempts = 0 :: integer(),
         proxy :: undefined | #fusco_url{},
         proxy_ssl_options = [] :: [any()],
-        proxy_setup = false :: boolean(),
 	host_header,
 	out_timestamp
         }).
@@ -103,32 +101,7 @@ disconnect(Client) ->
 %%------------------------------------------------------------------------------
 -spec request(pid(), string(), method(), headers(), iodata(), pos_timeout()) -> result().
 request(Client, Path, Method, Hdrs, Body, Timeout) ->
-    request(Client, Path, Method, Hdrs, Body, Timeout, []).
-
-%%------------------------------------------------------------------------------
-%% @spec (Client, Path, Method, Hdrs, RequestBody, Timeout, Options) -> ok
-%%    From = pid()
-%%    Method = string()
-%%    Hdrs = [Header]
-%%    Header = {string() | atom(), string()}
-%%    Body = iolist()
-%%    Options = [Option]
-%%    Option = {connect_timeout, Milliseconds}
-%%
-%% Authorization must be part of the headers
-%%
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec request(pid(), string(), method(), headers(), iolist(), integer(), options()) -> result().
-request(Client, Path, Method, Hdrs, Body, Timeout, []) ->
-    request(Client, Path, Method, Hdrs, Body, false, 1, [], Timeout);
-request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
-    verify_options(Options),
-    ProxyInfo = fusco_lib:get_value(proxy, Options, false),
-    SendRetry = fusco_lib:get_value(send_retry, Options, 1),
-    ProxySsl = fusco_lib:get_value(proxy_ssl_options, Options, []),
-    request(Client, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl, Timeout).
+    request(Client, Path, Method, Hdrs, Body, 1, Timeout).
 
 %%------------------------------------------------------------------------------
 %% @spec (Host, Port, Ssl, Path, Method, Hdrs, RequestBody, Timeout, Options) ->
@@ -225,10 +198,9 @@ request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
 %% list of all available options, please check OTP's ssl module manpage.
 %% @end
 %%------------------------------------------------------------------------------
-request(Client, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl, Timeout) ->
+request(Client, Path, Method, Hdrs, Body, SendRetry, Timeout) ->
     try
-	gen_server:call(Client, {request, Path, Method, Hdrs, Body, ProxyInfo,
-				 SendRetry, ProxySsl}, Timeout)
+	gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry}, Timeout)
     catch
 	exit:{timeout, _} ->
 	    {error, timeout}
@@ -241,6 +213,8 @@ init({Destination, Options}) ->
     ConnectTimeout = fusco_lib:get_value(connect_timeout, Options, infinity),
     ConnectOptions = fusco_lib:get_value(connect_options, Options, []),
     UseCookies = fusco_lib:get_value(use_cookies, Options, false),
+    ProxyInfo = fusco_lib:get_value(proxy, Options, false),
+    ProxySsl = fusco_lib:get_value(proxy_ssl_options, Options, []),
     {Host, Port, Ssl} = case Destination of
         {H, P, S} ->
             {H, P, S};
@@ -249,11 +223,23 @@ init({Destination, Options}) ->
                         is_ssl = S} = fusco_lib:parse_url(URL),
             {H, P, S}
     end,
+    Proxy = case ProxyInfo of
+		false ->
+		    undefined;
+		{proxy, ProxyUrl} when is_list(ProxyUrl), not Ssl ->
+		    %% The point of HTTP CONNECT proxying is to use TLS tunneled in
+		    %% a plain HTTP/1.1 connection to the proxy (RFC2817).
+		    throw(origin_server_not_https);
+		{proxy, ProxyUrl} when is_list(ProxyUrl) ->
+		    fusco_lib:parse_url(ProxyUrl)
+    end,
     State = #client_state{host = Host, port = Port, ssl = Ssl,
                           connect_timeout = ConnectTimeout,
                           connect_options = ConnectOptions,
                           use_cookies = UseCookies,
-			  host_header = fusco_lib:host_header(Host, Port)},
+			  host_header = fusco_lib:host_header(Host, Port),
+			  proxy = Proxy,
+			  proxy_ssl_options = ProxySsl},
     %% Get a socket or exit
     case connect_socket(State) of
         {ok, NewState} ->
@@ -267,35 +253,17 @@ init({Destination, Options}) ->
 %% the socket.
 %% @end
 %%------------------------------------------------------------------------------
-handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl}, From,
-            State = #client_state{ssl = Ssl, host_header = Host,
-                                  socket = Socket, cookies = Cookies,
+handle_call({request, Path, Method, Hdrs, Body, SendRetry}, From,
+            State = #client_state{host_header = Host,
+                                  cookies = Cookies,
                                   use_cookies = UseCookies}) ->
     {Request, ConHeader} =
 	fusco_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
-    NewState = case ProxyInfo of
-		   false ->
-		       State#client_state{
-			 request = Request,
-			 requester = From,
-			 connection_header = ConHeader,
-			 attempts = SendRetry,
-			 proxy = undefined};
-		   {proxy, ProxyUrl} when is_list(ProxyUrl), not Ssl ->
-		       %% The point of HTTP CONNECT proxying is to use TLS tunneled in
-		       %% a plain HTTP/1.1 connection to the proxy (RFC2817).
-		       throw(origin_server_not_https);
-		   {proxy, ProxyUrl} when is_list(ProxyUrl) ->
-		       State#client_state{
-			 request = Request,
-			 requester = From,
-			 connection_header = ConHeader,
-			 attempts = SendRetry,
-			 proxy = fusco_lib:parse_url(ProxyUrl),
-			 proxy_setup = (Socket /= undefined),
-			 proxy_ssl_options = ProxySsl}			   		       
-	       end,
-    send_request(NewState).
+    send_request(State#client_state{
+		   request = Request,
+		   requester = From,
+		   connection_header = ConHeader,
+		   attempts = SendRetry}).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -375,44 +343,8 @@ send_request(#client_state{socket = undefined} = State) ->
         {Error, NewState} ->
             {reply, Error, NewState}
     end;
-send_request(#client_state{proxy = #fusco_url{}, proxy_setup = false,
-                           host = DestHost, port = Port, socket = Socket} = State) ->
-    %% Proxy tunnel connection http://tools.ietf.org/html/rfc2817#section-5.2
-    #fusco_url{user = User, password = Passwd, is_ssl = Ssl} = State#client_state.proxy,
-    Host = case inet_parse:address(DestHost) of
-        {ok, {_, _, _, _, _, _, _, _}} ->
-            %% IPv6 address literals are enclosed by square brackets (RFC2732)
-            [$[, DestHost, $], $:, integer_to_list(Port)];
-        _ ->
-            [DestHost, $:, integer_to_list(Port)]
-    end,
-    ConnectRequest = [
-            "CONNECT ", Host, " HTTP/1.1", ?HTTP_LINE_END,
-            "Host: ", Host, ?HTTP_LINE_END,
-            case User of
-                [] ->
-                    [];
-                _ ->
-                    ["Proxy-Authorization: Basic ",
-                     base64:encode(User ++ ":" ++ Passwd), ?HTTP_LINE_END]
-            end,
-            ?HTTP_LINE_END],
-    case fusco_sock:send(Socket, ConnectRequest, Ssl) of
-        ok ->
-            {Reply, NewState} = read_proxy_connect_response(State),
-            {reply, Reply, NewState};
-        {error, closed} ->
-            fusco_sock:close(Socket, Ssl),
-            {reply, {error, proxy_connection_closed},
-             State#client_state{socket = undefined}};
-        {error, _Reason} ->
-            fusco_sock:close(Socket, Ssl),
-            {reply, {error, proxy_connection_closed},
-             State#client_state{socket = undefined}}
-    end;
 send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
                            attempts = Attempts} = State) ->
-    %% no proxy
     Out = os:timestamp(),
     case fusco_sock:send(Socket, Request, Ssl) of
         ok ->
@@ -453,22 +385,20 @@ read_proxy_connect_response(State) ->
             ConnectOptions = State#client_state.connect_options,
             SslOptions = State#client_state.proxy_ssl_options,
             Timeout = State#client_state.connect_timeout,
-            State2 = case ssl:connect(Socket, SslOptions ++ ConnectOptions, Timeout) of
-                {ok, SslSocket} ->
-                    State#client_state{socket = SslSocket, proxy_setup = true};
-                {error, Reason} ->
-                    fusco_sock:close(State#client_state.socket, State#client_state.ssl),
-                    {{error, {proxy_connection_failed, Reason}}, State}
-            end,
-            send_request(State2);
+            case ssl:connect(Socket, SslOptions ++ ConnectOptions, Timeout) of
+		{ok, SslSocket} ->
+		    {ok, SslSocket};
+		{error, Reason} ->
+		    fusco_sock:close(State#client_state.socket, State#client_state.ssl),
+		    {error, {proxy_connection_failed, Reason}}
+	    end;
         #response{status_code = StatusCode, reason = Reason} ->
-            {{error, {proxy_connection_refused, StatusCode, Reason}}, State};
+            {error, {proxy_connection_refused, StatusCode, Reason}};
         {error, closed} ->
             fusco_sock:close(Socket, ProxyIsSsl),
-            {{error, proxy_connection_closed},
-             State#client_state{socket = undefined}};
+            {error, proxy_connection_closed};
         {error, Reason} ->
-            {{error, {proxy_connection_failed, Reason}}, State}
+            {error, {proxy_connection_failed, Reason}}
     end.
 
 %%------------------------------------------------------------------------------
@@ -591,7 +521,7 @@ is_ipv6_host(Host) ->
 %% @end
 %%------------------------------------------------------------------------------
 connect_socket(State) ->
-    case new_socket(State) of
+    case ensure_proxy_tunnel(new_socket(State), State) of
 	{ok, Socket} ->
 	    {ok, State#client_state{socket = Socket}};
 	Error ->
@@ -636,12 +566,44 @@ new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOpt
             {error, connection_error}
     end.
 
+ensure_proxy_tunnel({error, _} = Error, _State) ->
+    Error;
+ensure_proxy_tunnel(Socket, #client_state{proxy = #fusco_url{user = User,
+							     password = Passwd,
+							     is_ssl = Ssl},
+					  host = DestHost, port = Port} = State) ->
+    %% Proxy tunnel connection http://tools.ietf.org/html/rfc2817#section-5.2
+    %% Draft http://www.web-cache.com/Writings/Internet-Drafts/draft-luotonen-web-proxy-tunneling-01.txt
+    %% IPv6 address literals are enclosed by square brackets (RFC2732)
+    Host = [fusco_lib:maybe_ipv6_enclode(DestHost), $:, integer_to_list(Port)],
+    ConnectRequest = [
+		      <<"CONNECT ">>, Host, <<" HTTP/1.1">>, ?HTTP_LINE_END,
+		      <<"Host: ">>, Host, ?HTTP_LINE_END,
+		      case User of
+			  [] ->
+			      [];
+			  _ ->
+			      [<<"Proxy-Authorization: Basic ">>,
+			       base64:encode(User ++ ":" ++ Passwd), ?HTTP_LINE_END]
+		      end,
+            ?HTTP_LINE_END],
+    case fusco_sock:send(Socket, ConnectRequest, Ssl) of
+        ok ->
+            read_proxy_connect_response(State#client_state{socket = Socket});
+        {error, closed} ->
+            fusco_sock:close(Socket, Ssl),
+            {error, proxy_connection_closed};
+        {error, _Reason} ->
+            fusco_sock:close(Socket, Ssl),
+            {error, proxy_connection_closed}
+    end;
+ensure_proxy_tunnel(Socket, _State) ->
+    Socket.
+
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
 -spec verify_options(options()) -> ok | any().
-verify_options([{send_retry, N} | Options]) when is_integer(N), N >= 0 ->
-    verify_options(Options);
 verify_options([{connect_timeout, infinity} | Options]) ->
     verify_options(Options);
 verify_options([{connect_timeout, MS} | Options])

@@ -43,7 +43,8 @@
 	 get_value/2,
 	 get_value/3,
 	 host_header/2,
-	 is_close/1]).
+	 is_close/1,
+	 maybe_ipv6_enclose/1]).
 
 -include("fusco_types.hrl").
 -include("fusco.hrl").
