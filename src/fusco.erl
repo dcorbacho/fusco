@@ -377,7 +377,7 @@ send_request(#client_state{socket = undefined} = State) ->
     end;
 send_request(#client_state{proxy = #fusco_url{}, proxy_setup = false,
                            host = DestHost, port = Port, socket = Socket} = State) ->
-    %% use a proxy.
+    %% Proxy tunnel connection http://tools.ietf.org/html/rfc2817#section-5.2
     #fusco_url{user = User, password = Passwd, is_ssl = Ssl} = State#client_state.proxy,
     Host = case inet_parse:address(DestHost) of
         {ok, {_, _, _, _, _, _, _, _}} ->
@@ -399,7 +399,7 @@ send_request(#client_state{proxy = #fusco_url{}, proxy_setup = false,
             ?HTTP_LINE_END],
     case fusco_sock:send(Socket, ConnectRequest, Ssl) of
         ok ->
-            {Reply, NewState} = read_proxy_connect_response(State, nil, nil),
+            {Reply, NewState} = read_proxy_connect_response(State),
             {reply, Reply, NewState};
         {error, closed} ->
             fusco_sock:close(Socket, Ssl),
@@ -436,23 +436,19 @@ request_first_destination(#client_state{host = Host, port = Port, ssl = Ssl}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-read_proxy_connect_response(State, StatusCode, StatusText) ->
+read_proxy_connect_response(State) ->
     Socket = State#client_state.socket,
     ProxyIsSsl = (State#client_state.proxy)#fusco_url.is_ssl,
     case fusco_sock:recv(Socket, ProxyIsSsl) of
-        {ok, {http_response, _Vsn, Code, Reason}} ->
-            read_proxy_connect_response(State, Code, Reason);
-        {ok, {http_header, _, _Name, _, _Value}} ->
-            read_proxy_connect_response(State, StatusCode, StatusText);
-        {ok, http_eoh} when StatusCode >= 100, StatusCode =< 199 ->
+	#response{status_code = <<$1,_,_>>} ->
             %% RFC 2616, section 10.1:
             %% A client MUST be prepared to accept one or more
             %% 1xx status responses prior to a regular
             %% response, even if the client does not expect a
             %% 100 (Continue) status message. Unexpected 1xx
             %% status responses MAY be ignored by a user agent.
-            read_proxy_connect_response(State, nil, nil);
-        {ok, http_eoh} when StatusCode >= 200, StatusCode < 300 ->
+            read_proxy_connect_response(State);
+	#response{status_code = <<$2,_,_>>} ->
             %% RFC2817, any 2xx code means success.
             ConnectOptions = State#client_state.connect_options,
             SslOptions = State#client_state.proxy_ssl_options,
@@ -465,8 +461,8 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
                     {{error, {proxy_connection_failed, Reason}}, State}
             end,
             send_request(State2);
-        {ok, http_eoh} ->
-            {{error, {proxy_connection_refused, StatusCode, StatusText}}, State};
+        #response{status_code = StatusCode, reason = Reason} ->
+            {{error, {proxy_connection_refused, StatusCode, Reason}}, State};
         {error, closed} ->
             fusco_sock:close(Socket, ProxyIsSsl),
             {{error, proxy_connection_closed},
