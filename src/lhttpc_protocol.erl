@@ -9,8 +9,10 @@
 
 -include("lhttpc.hrl").
 
--record(state, {socket, ssl, version, status_code, reason, headers = [],
-		connection, cookies = [], content_length = 0}).
+-define(SIZE(Data, Response), Response#response{size = Response#response.size + byte_size(Data)}).
+-define(RECEPTION(Data, Response), Response#response{size = byte_size(Data),
+						     in_timestamp = os:timestamp()}).
+%% Latency is here defined as the time from the start of packet transmission to the start of packet reception
 
 %% API
 -export([recv/2,
@@ -18,154 +20,151 @@
 
 %% TEST
 -export([decode_header_value/5,
-	 decode_header/3,
-	 empty_state/0]).
+	 decode_header/3]).
 
 %% TODO handle partial downloads
 
 recv(Socket, Ssl) ->
-    recv(Socket, Ssl, <<>>).
-
-recv(Socket, Ssl, Buffer) ->
     case lhttpc_sock:recv(Socket, Ssl) of
 	{ok, Data} ->
-	    decode_status_line(<< Buffer/binary, Data/binary >>, #state{socket = Socket, ssl = Ssl});
+	    decode_status_line(<< Data/binary >>,
+			       ?RECEPTION(Data, #response{socket = Socket, ssl = Ssl}));
 	{error, Reason} ->
 	    {error, Reason}
     end.
 
-decode_status_line(<<"HTTP/1.0\s", Rest/bits>>, State) ->
-    decode_status_code(Rest, State#state{version = {1,0}});
-decode_status_line(<<"HTTP/1.1\s", Rest/bits>>, State) ->
-    decode_status_code(Rest, State#state{version = {1,1}});
-decode_status_line(Bin, State) when byte_size(Bin) < 10 ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_status_line(<<"HTTP/1.0\s", Rest/bits>>, Response) ->
+    decode_status_code(Rest, Response#response{version = {1,0}});
+decode_status_line(<<"HTTP/1.1\s", Rest/bits>>, Response) ->
+    decode_status_code(Rest, Response#response{version = {1,1}});
+decode_status_line(Bin, Response = #response{size = Size}) when Size < 10 ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_status_line(<<Bin/binary, Data/binary>>, State);
+	    decode_status_line(<<Bin/binary, Data/binary>>, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;    
 decode_status_line(_, _) ->
     {error, status_line}.
 
-decode_status_code(<<C1,C2,C3,$\s,Rest/bits>>, State) ->
-    decode_reason_phrase(Rest, <<>>, State#state{status_code = <<C1,C2,C3>>});
-decode_status_code(Bin, State) when byte_size(Bin) < 4 ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_status_code(<<C1,C2,C3,$\s,Rest/bits>>, Response) ->
+    decode_reason_phrase(Rest, <<>>, Response#response{status_code = <<C1,C2,C3>>});
+decode_status_code(Bin, Response) when byte_size(Bin) < 4 ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_status_code(<<Bin/binary, Data/binary>>, State);
+	    decode_status_code(<<Bin/binary, Data/binary>>, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;    
 decode_status_code(_, _) ->
     {error, status_code}.
 
-decode_reason_phrase(<<>>, Acc, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_reason_phrase(<<>>, Acc, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_reason_phrase(Data, Acc, State);
+	    decode_reason_phrase(Data, Acc, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_reason_phrase(<<$\r>>, Acc, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_reason_phrase(<<$\r>>, Acc, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_reason_phrase(<<$\r, Data/binary>>, Acc, State);
+	    decode_reason_phrase(<<$\r, Data/binary>>, Acc, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_reason_phrase(<<"\n", Rest/bits>>, Acc, State) ->
-    decode_header(Rest, <<>>, State#state{reason = Acc});
-decode_reason_phrase(<<"\r\n", Rest/bits>>, Acc, State) ->
-    decode_header(Rest, <<>>, State#state{reason = Acc});
-decode_reason_phrase(<<C, Rest/bits>>, Acc, State) ->
-    decode_reason_phrase(Rest, <<Acc/binary, C>>, State).
+decode_reason_phrase(<<"\n", Rest/bits>>, Acc, Response) ->
+    decode_header(Rest, <<>>, Response#response{reason = Acc});
+decode_reason_phrase(<<"\r\n", Rest/bits>>, Acc, Response) ->
+    decode_header(Rest, <<>>, Response#response{reason = Acc});
+decode_reason_phrase(<<C, Rest/bits>>, Acc, Response) ->
+    decode_reason_phrase(Rest, <<Acc/binary, C>>, Response).
 
-decode_header(<<>>, Acc, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_header(<<>>, Acc, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_header(Data, Acc, State);
+	    decode_header(Data, Acc, ?SIZE(Data, Response));
 	{error, closed} ->
 	    case Acc of
 		<<>> ->
-		    decode_body(<<>>, State);
+		    decode_body(<<>>, Response);
 		_ ->
 		    {error, closed}
 	    end;
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_header(<<$\r>>, Acc, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_header(<<$\r>>, Acc, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_header(<<$\r, Data/binary>>, Acc, State);
+	    decode_header(<<$\r, Data/binary>>, Acc, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_header(<<$\s, Rest/bits>>, Acc, State) ->
-    decode_header(Rest, Acc, State);
-decode_header(<<$:, Rest/bits>>, Header, State) ->
-    decode_header_value_ws(Rest, Header, State);
-decode_header(<<$\n, Rest/bits>>, <<>>, State) ->
-    decode_body(Rest, State);
-decode_header(<<$\r, $\n, Rest/bits>>, <<>>, State) ->
-    decode_body(Rest, State);
-decode_header(<<$\r, $\n, _Rest/bits>>, _, _State) ->
+decode_header(<<$\s, Rest/bits>>, Acc, Response) ->
+    decode_header(Rest, Acc, Response);
+decode_header(<<$:, Rest/bits>>, Header, Response) ->
+    decode_header_value_ws(Rest, Header, Response);
+decode_header(<<$\n, Rest/bits>>, <<>>, Response) ->
+    decode_body(Rest, Response);
+decode_header(<<$\r, $\n, Rest/bits>>, <<>>, Response) ->
+    decode_body(Rest, Response);
+decode_header(<<$\r, $\n, _Rest/bits>>, _, _Response) ->
     {error, header};
-decode_header(<<$A, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $a>>, State);
-decode_header(<<$B, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $b>>, State);
-decode_header(<<$C, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $c>>, State);
-decode_header(<<$D, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $d>>, State);
-decode_header(<<$E, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $e>>, State);
-decode_header(<<$F, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $f>>, State);
-decode_header(<<$G, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $g>>, State);
-decode_header(<<$H, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $h>>, State);
-decode_header(<<$I, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $i>>, State);
-decode_header(<<$J, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $j>>, State);
-decode_header(<<$K, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $k>>, State);
-decode_header(<<$L, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $l>>, State);
-decode_header(<<$M, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $m>>, State);
-decode_header(<<$N, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $n>>, State);
-decode_header(<<$O, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $o>>, State);
-decode_header(<<$P, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $p>>, State);
-decode_header(<<$Q, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $q>>, State);
-decode_header(<<$R, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $r>>, State);
-decode_header(<<$S, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $s>>, State);
-decode_header(<<$T, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $t>>, State);
-decode_header(<<$U, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $u>>, State);
-decode_header(<<$V, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $v>>, State);
-decode_header(<<$W, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $w>>, State);
-decode_header(<<$X, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $x>>, State);
-decode_header(<<$Y, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $y>>, State);
-decode_header(<<$Z, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, $z>>, State);
-decode_header(<<C, Rest/bits>>, Header, State) ->
-    decode_header(Rest, <<Header/binary, C>>, State).
+decode_header(<<$A, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $a>>, Response);
+decode_header(<<$B, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $b>>, Response);
+decode_header(<<$C, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $c>>, Response);
+decode_header(<<$D, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $d>>, Response);
+decode_header(<<$E, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $e>>, Response);
+decode_header(<<$F, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $f>>, Response);
+decode_header(<<$G, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $g>>, Response);
+decode_header(<<$H, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $h>>, Response);
+decode_header(<<$I, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $i>>, Response);
+decode_header(<<$J, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $j>>, Response);
+decode_header(<<$K, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $k>>, Response);
+decode_header(<<$L, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $l>>, Response);
+decode_header(<<$M, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $m>>, Response);
+decode_header(<<$N, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $n>>, Response);
+decode_header(<<$O, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $o>>, Response);
+decode_header(<<$P, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $p>>, Response);
+decode_header(<<$Q, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $q>>, Response);
+decode_header(<<$R, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $r>>, Response);
+decode_header(<<$S, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $s>>, Response);
+decode_header(<<$T, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $t>>, Response);
+decode_header(<<$U, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $u>>, Response);
+decode_header(<<$V, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $v>>, Response);
+decode_header(<<$W, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $w>>, Response);
+decode_header(<<$X, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $x>>, Response);
+decode_header(<<$Y, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $y>>, Response);
+decode_header(<<$Z, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, $z>>, Response);
+decode_header(<<C, Rest/bits>>, Header, Response) ->
+    decode_header(Rest, <<Header/binary, C>>, Response).
 
 decode_header_value_ws(<<$\s, Rest/bits>>, H, S) ->
     decode_header_value_ws(Rest, H, S);
@@ -176,125 +175,125 @@ decode_header_value_ws(Rest, <<"connection">> = H, S) ->
 decode_header_value_ws(Rest, H, S) ->
     decode_header_value(Rest, H, <<>>, <<>>, S).
 
-decode_header_value(<<>>, H, V, T, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_header_value(<<>>, H, V, T, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_header_value(Data, H, V, T, State);
+	    decode_header_value(Data, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_header_value(<<$\r>>, H, V, T, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_header_value(<<$\r>>, H, V, T, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_header_value(<<$\r, Data/binary>>, H, V, T, State);
+	    decode_header_value(<<$\r, Data/binary>>, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_header_value(<<$\n, Rest/bits>>, <<"content-length">> = H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+decode_header_value(<<$\n, Rest/bits>>, <<"content-length">> = H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
 					  content_length = list_to_integer(binary_to_list(V))});
-decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
-						     | State#state.cookies],
-					  headers = [{H, V} | State#state.headers]});
-decode_header_value(<<$\n, Rest/bits>>, H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
-decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{cookies = [decode_cookie(V)
-						     | State#state.cookies],
-					  headers = [{H, V} | State#state.headers]});
-decode_header_value(<<$\r,$\n, Rest/bits>>, <<"content-length">> = H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{cookies = [decode_cookie(V)
+						     | Response#response.cookies],
+					  headers = [{H, V} | Response#response.headers]});
+decode_header_value(<<$\n, Rest/bits>>, H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers]});
+decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{cookies = [decode_cookie(V)
+						     | Response#response.cookies],
+					  headers = [{H, V} | Response#response.headers]});
+decode_header_value(<<$\r,$\n, Rest/bits>>, <<"content-length">> = H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
 					  content_length = list_to_integer(binary_to_list(V))});
-decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers]});
-decode_header_value(<<$\s, Rest/bits>>, H, V, T, State) ->
-    decode_header_value(Rest, H, V, <<T/binary, $\s>>, State);
-decode_header_value(<<$\t, Rest/bits>>, H, V, T, State) ->
-    decode_header_value(Rest, H, V, <<T/binary, $\t>>, State);
-decode_header_value(<<C, Rest/bits>>, H, V, <<>>, State) ->
-    decode_header_value(Rest, H, <<V/binary, C>>, <<>>, State);
-decode_header_value(<<C, Rest/bits>>, H, V, T, State) ->
-    decode_header_value(Rest, H, <<V/binary, T/binary, C>>, <<>>, State).
+decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers]});
+decode_header_value(<<$\s, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value(Rest, H, V, <<T/binary, $\s>>, Response);
+decode_header_value(<<$\t, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value(Rest, H, V, <<T/binary, $\t>>, Response);
+decode_header_value(<<C, Rest/bits>>, H, V, <<>>, Response) ->
+    decode_header_value(Rest, H, <<V/binary, C>>, <<>>, Response);
+decode_header_value(<<C, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value(Rest, H, <<V/binary, T/binary, C>>, <<>>, Response).
 
-decode_header_value_lc(<<>>, H, V, T, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_header_value_lc(<<>>, H, V, T, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_header_value_lc(Data, H, V, T, State);
+	    decode_header_value_lc(Data, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_header_value_lc(<<$\r>>, H, V, T, State) ->
-    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+decode_header_value_lc(<<$\r>>, H, V, T, Response) ->
+    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_header_value_lc(<<$\r, Data/binary>>, H, V, T, State);
+	    decode_header_value_lc(<<$\r, Data/binary>>, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_header_value_lc(<<$\n, Rest/bits>>, H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+decode_header_value_lc(<<$\n, Rest/bits>>, H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
 					  connection = V});
-decode_header_value_lc(<<$\r, $\n, Rest/bits>>, H, V, _T, State) ->
-    decode_header(Rest, <<>>, State#state{headers = [{H, V} | State#state.headers],
+decode_header_value_lc(<<$\r, $\n, Rest/bits>>, H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
 					  connection = V});
-decode_header_value_lc(<<$\s, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, V, <<T/binary, $\s>>, State);
-decode_header_value_lc(<<$\t, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, V, <<T/binary, $\t>>, State);
-decode_header_value_lc(<<$A, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $a>>, <<>>, State);
-decode_header_value_lc(<<$B, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $b>>, <<>>, State);
-decode_header_value_lc(<<$C, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $c>>, <<>>, State);
-decode_header_value_lc(<<$D, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $d>>, <<>>, State);
-decode_header_value_lc(<<$E, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $e>>, <<>>, State);
-decode_header_value_lc(<<$F, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $f>>, <<>>, State);
-decode_header_value_lc(<<$G, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $g>>, <<>>, State);
-decode_header_value_lc(<<$H, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $h>>, <<>>, State);
-decode_header_value_lc(<<$I, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $i>>, <<>>, State);
-decode_header_value_lc(<<$J, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $j>>, <<>>, State);
-decode_header_value_lc(<<$K, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $k>>, <<>>, State);
-decode_header_value_lc(<<$L, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $l>>, <<>>, State);
-decode_header_value_lc(<<$M, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $m>>, <<>>, State);
-decode_header_value_lc(<<$N, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $n>>, <<>>, State);
-decode_header_value_lc(<<$O, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $o>>, <<>>, State);
-decode_header_value_lc(<<$P, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $p>>, <<>>, State);
-decode_header_value_lc(<<$Q, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $q>>, <<>>, State);
-decode_header_value_lc(<<$R, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $r>>, <<>>, State);
-decode_header_value_lc(<<$S, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $s>>, <<>>, State);
-decode_header_value_lc(<<$T, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $t>>, <<>>, State);
-decode_header_value_lc(<<$U, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $u>>, <<>>, State);
-decode_header_value_lc(<<$V, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $v>>, <<>>, State);
-decode_header_value_lc(<<$W, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $w>>, <<>>, State);
-decode_header_value_lc(<<$X, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $x>>, <<>>, State);
-decode_header_value_lc(<<$Y, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $y>>, <<>>, State);
-decode_header_value_lc(<<$Z, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $z>>, <<>>, State);
-decode_header_value_lc(<<C, Rest/bits>>, H, V, T, State) ->
-    decode_header_value_lc(Rest, H, <<V/binary, T/binary, C>>, <<>>, State).
+decode_header_value_lc(<<$\s, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, V, <<T/binary, $\s>>, Response);
+decode_header_value_lc(<<$\t, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, V, <<T/binary, $\t>>, Response);
+decode_header_value_lc(<<$A, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $a>>, <<>>, Response);
+decode_header_value_lc(<<$B, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $b>>, <<>>, Response);
+decode_header_value_lc(<<$C, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $c>>, <<>>, Response);
+decode_header_value_lc(<<$D, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $d>>, <<>>, Response);
+decode_header_value_lc(<<$E, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $e>>, <<>>, Response);
+decode_header_value_lc(<<$F, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $f>>, <<>>, Response);
+decode_header_value_lc(<<$G, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $g>>, <<>>, Response);
+decode_header_value_lc(<<$H, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $h>>, <<>>, Response);
+decode_header_value_lc(<<$I, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $i>>, <<>>, Response);
+decode_header_value_lc(<<$J, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $j>>, <<>>, Response);
+decode_header_value_lc(<<$K, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $k>>, <<>>, Response);
+decode_header_value_lc(<<$L, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $l>>, <<>>, Response);
+decode_header_value_lc(<<$M, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $m>>, <<>>, Response);
+decode_header_value_lc(<<$N, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $n>>, <<>>, Response);
+decode_header_value_lc(<<$O, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $o>>, <<>>, Response);
+decode_header_value_lc(<<$P, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $p>>, <<>>, Response);
+decode_header_value_lc(<<$Q, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $q>>, <<>>, Response);
+decode_header_value_lc(<<$R, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $r>>, <<>>, Response);
+decode_header_value_lc(<<$S, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $s>>, <<>>, Response);
+decode_header_value_lc(<<$T, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $t>>, <<>>, Response);
+decode_header_value_lc(<<$U, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $u>>, <<>>, Response);
+decode_header_value_lc(<<$V, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $v>>, <<>>, Response);
+decode_header_value_lc(<<$W, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $w>>, <<>>, Response);
+decode_header_value_lc(<<$X, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $x>>, <<>>, Response);
+decode_header_value_lc(<<$Y, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $y>>, <<>>, Response);
+decode_header_value_lc(<<$Z, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, $z>>, <<>>, Response);
+decode_header_value_lc(<<C, Rest/bits>>, H, V, T, Response) ->
+    decode_header_value_lc(Rest, H, <<V/binary, T/binary, C>>, <<>>, Response).
 
 %% RFC 6265
 %% TODO decode cookie values, this only accepts 'a=b'
@@ -402,29 +401,30 @@ decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
     decode_cookie_av_value(Rest, Co, AV, <<Value/binary, C>>).
 
 
-decode_body(<<>>, State = #state{status_code = <<$1, _, _>>}) ->
-    return(<<>>, State);
-decode_body(Rest, State = #state{status_code = <<$1, _, _>>}) ->
-    decode_status_line(Rest, #state{socket = State#state.socket,
-				    ssl = State#state.ssl});
-decode_body(<<$\r, $\n, Rest/bits>>, State) ->
-    decode_body(Rest, State);
-decode_body(Rest, State) ->
-    case byte_size(Rest) >= State#state.content_length of
+decode_body(<<>>, Response = #response{status_code = <<$1, _, _>>}) ->
+    return(<<>>, Response);
+decode_body(Rest, Response = #response{status_code = <<$1, _, _>>}) ->
+    decode_status_line(Rest, #response{socket = Response#response.socket,
+				       ssl = Response#response.ssl,
+				       in_timestamp = Response#response.in_timestamp});
+decode_body(<<$\r, $\n, Rest/bits>>, Response) ->
+    decode_body(Rest, Response);
+decode_body(Rest, Response) ->
+    case byte_size(Rest) >= Response#response.content_length of
 	true ->
-	    return(Rest, State);
+	    return(Rest, Response);
 	false ->
-	    case lhttpc_sock:recv(State#state.socket, State#state.ssl) of
+	    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
 		{ok, Data} ->
-		    decode_body(<<Rest/binary, Data/binary>>, State);
+		    decode_body(<<Rest/binary, Data/binary>>, ?SIZE(Data, Response));
 		_ ->
 		    %% NOTE: Return what we have so far
-		    return(Rest, State)
+		    return(Rest, Response)
 	    end
     end.
 
-return(Rest, State) ->
-    {State#state.version, State#state.status_code, State#state.reason, State#state.cookies, State#state.headers, State#state.connection, Rest}.
+return(Body, Response) ->
+    Response#response{body = Body}.
 
 max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.
@@ -479,6 +479,3 @@ month(<<$N,$o,$v>>) ->
     11;
 month(<<$D,$e,$c>>) ->
     12.
-
-empty_state() ->
-    #state{}.

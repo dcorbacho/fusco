@@ -74,7 +74,8 @@
         proxy :: undefined | #lhttpc_url{},
         proxy_ssl_options = [] :: [any()],
         proxy_setup = false :: boolean(),
-	host_header
+	host_header,
+	out_timestamp
         }).
 
 %%==============================================================================
@@ -412,9 +413,10 @@ send_request(#client_state{proxy = #lhttpc_url{}, proxy_setup = false,
 send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
                            attempts = Attempts} = State) ->
     %% no proxy
+    Out = os:timestamp(),
     case lhttpc_sock:send(Socket, Request, Ssl) of
         ok ->
-	    read_response(State);
+	    read_response(State#client_state{out_timestamp = Out});
         {error, closed} ->
             lhttpc_sock:close(Socket, Ssl),
             send_request(State#client_state{socket = undefined, attempts = Attempts - 1});
@@ -481,9 +483,9 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
 -spec read_response(#client_state{}) -> {any(), socket()} | no_return().
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
                             connection_header = ConHdr, cookies = Cookies,
-			    requester = From} = State) ->
+			    requester = From, out_timestamp = Out} = State) ->
     case lhttpc_protocol:recv(Socket, Ssl) of
-	{_Vsn, <<$1,_,_>>, _Reason, _Cookies, _Hdrs, _Body} ->
+	#response{status_code = <<$1,_,_>>} ->
 	    %% RFC 2616, section 10.1:
             %% A client MUST be prepared to accept one or more
             %% 1xx status responses prior to a regular
@@ -491,8 +493,13 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             %% 100 (Continue) status message. Unexpected 1xx
             %% status responses MAY be ignored by a user agent.
             read_response(State);
-	{Vsn, Status, Reason, NewCookies, NewHdrs, Connection, Body} ->
-	    gen_server:reply(From, {ok, {{Status, Reason}, NewHdrs, Body}}),
+	#response{version = Vsn, cookies = NewCookies, connection = Connection,
+		  status_code = Status, reason = Reason, headers = Headers,
+		  body = Body, size = Size, in_timestamp = In}->
+	    gen_server:reply(
+	      From,
+	      {ok, {{Status, Reason}, Headers, Body, Size,
+		    timer:now_diff(In, Out)}}),
 	    case maybe_close_socket(State, Vsn, ConHdr, Connection) of
 		undefined ->
 		    case UseCookies of

@@ -42,3 +42,16 @@
 	  max_age :: integer() | atom(),
 	  timestamp :: atom() | {integer(), integer(), integer()}
 }).
+
+-record(response, {socket,
+		   ssl,
+		   version,
+		   status_code,
+		   reason,
+		   headers = [],
+		   connection,
+		   cookies = [],
+		   content_length = 0,
+		   size,
+		   in_timestamp,
+		   body}).

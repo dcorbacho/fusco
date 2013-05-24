@@ -459,11 +459,11 @@ ssl_url(Port) ->
 ssl_url(inet6, Port) ->
     "https://[::1]:" ++ integer_to_list(Port).
 
-status({Status, _, _}) ->
+status({Status, _, _, _, _}) ->
     Status.
 
-body({_, _, Body}) ->
+body({_, _, Body, _, _}) ->
     Body.
 
-headers({_, Headers, _}) ->
+headers({_, Headers, _, _, _}) ->
     Headers.

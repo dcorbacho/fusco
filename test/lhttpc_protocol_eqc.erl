@@ -50,8 +50,8 @@ prop_http_response() ->
 		  test_utils:send_message(Socket),
 		  Recv = lhttpc_protocol:recv(Socket, false),
 		  test_utils:stop_listener(L),
-		  Expected = expected_output(StatusLine, Headers, Cookies, Body),
-		  Cleared = clear_connection(clear_timestamps(Recv)),
+		  Expected = expected_output(StatusLine, Headers, Cookies, Body, Msg),
+		  Cleared = clear_record(clear_connection(clear_timestamps(Recv))),
 		  ?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
 				      " ~p~nCleared: ~p~nExpected: ~p~n",
 				      [binary:list_to_bin(Msg), Recv, Cleared, Expected]),
@@ -72,13 +72,21 @@ build_valid_message({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body) -
     CS = [[Name, colon(), build_cookie(Cookie), crlf()] || {Name, Cookie} <- Cookies],
     [SL, HS ++ CS, crlf(), Body]. 
 
-expected_output({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body) ->
+expected_output({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body, Msg) ->
     Version = http_version(HttpVersion),
     OCookies = [{Name, list_to_binary(build_cookie(Cookie))} || {Name, Cookie} <- Cookies],
     LowerHeaders = lists:reverse(headers_to_lower(Headers ++ OCookies)),
     CookiesRec = output_cookies(Cookies),
-    {Version, StatusCode, Reason, CookiesRec, LowerHeaders,
-     to_lower(proplists:get_value(<<"connection">>, LowerHeaders)), Body}.
+    #response{version = Version,
+	      status_code = StatusCode,
+	      reason = Reason,
+	      cookies = CookiesRec,
+	      headers = LowerHeaders,
+	      connection = to_lower(proplists:get_value(<<"connection">>,
+							LowerHeaders)),
+	      body = Body,
+	      content_length = byte_size(Body),
+	      size = byte_size(list_to_binary(Msg))}.
 
 output_cookies(Cookies) ->
     output_cookies(Cookies, []).
@@ -121,13 +129,19 @@ months() ->
      {"May", 5}, {"Jun", 6}, {"Jul", 7}, {"Aug", 8},
      {"Sep", 9}, {"Oct", 10}, {"Nov", 11}, {"Dec", 12}].
 
-clear_timestamps({V, S, R, C, H, Con, B}) ->
-    {V, S, R, [Co#lhttpc_cookie{timestamp=undefined} || Co <- C], H, to_lower(Con), B};
+clear_record(Response) ->
+    Response#response{socket = undefined,
+		      ssl = undefined,
+		      in_timestamp = undefined}.
+
+clear_timestamps(Response) when is_record(Response, response) ->
+    Response#response{cookies = [Co#lhttpc_cookie{timestamp=undefined}
+				 || Co <- Response#response.cookies]};
 clear_timestamps(Error) ->
     Error.
 
-clear_connection({V, S, R, C, H, Co, B}) ->
-    {V, S, R, C, H, to_lower(Co), B};
+clear_connection(Response) when is_record(Response, response) ->
+    Response#response{connection = to_lower(Response#response.connection)};
 clear_connection(Error) ->
     Error.
 

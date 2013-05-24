@@ -7,6 +7,7 @@
 -module(lhttpc_protocol_tests).
 
 -include_lib("eunit/include/eunit.hrl").
+-include("lhttpc.hrl").
 
 -export([test_decode_header/0]).
 
@@ -18,7 +19,10 @@ lhttpc_protocol_test_() ->
 http_version() ->
     L = {_, _, Socket} = test_utils:start_listener(cookie_message()),
     test_utils:send_message(Socket),
-    ?assertMatch({{1,1}, <<"200">>, <<"OK">>, _, _, _, <<"Great success!">>},
+    ?assertMatch(#response{version = {1,1},
+			   status_code = <<"200">>,
+			   reason = <<"OK">>,
+			   body = <<"Great success!">>},
 		 lhttpc_protocol:recv(Socket, false)),
     test_utils:stop_listener(L).
 
@@ -27,28 +31,25 @@ cookies() ->
     test_utils:send_message(Socket),
     Recv = lhttpc_protocol:recv(Socket, false),
     test_utils:stop_listener(L),
-    ?assertMatch({{1,1}, <<"200">>, <<"OK">>,
-		  _,
-		  [{<<"set-cookie">>,<<"name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT">>},
-		   {<<"set-cookie">>,<<"name=value">>} | _],
-		  _,
-		  <<"Great success!">>},
+    ?assertMatch(#response{version = {1,1},
+			   status_code = <<"200">>,
+			   reason = <<"OK">>,
+			   headers = [{<<"set-cookie">>,<<"name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT">>},
+				      {<<"set-cookie">>,<<"name=value">>} | _],
+			   body = <<"Great success!">>},
 		 Recv).
 
 decode_header() ->
-    ?assertMatch({undefined, undefined, undefined,
-		  _,
-		  [{<<"set-cookie">>,<<"name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT">>},
-		   {<<"set-cookie">>,<<"name=value">>},
-		   {<<"content-length">>, <<"14">>},
-		   {<<"content-type">>,<<"text/plain">>}],
-		  _,
-		  <<"Great success!">>},
+    ?assertMatch(#response{
+		    headers = [{<<"set-cookie">>,<<"name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT">>},
+			       {<<"set-cookie">>,<<"name=value">>},
+			       {<<"content-length">>, <<"14">>},
+			       {<<"content-type">>,<<"text/plain">>}],
+		    body = <<"Great success!">>},
 		 test_decode_header()).
 
 test_decode_header() ->
-    lhttpc_protocol:decode_header(header(), <<>>,
-				  lhttpc_protocol:empty_state()).
+    lhttpc_protocol:decode_header(header(), <<>>, #response{}).
 
 header() ->
     <<"Content-type: text/plain\r\nContent-length: 14\r\nSet-Cookie: name=value\r\nSet-Cookie: name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT\r\n\r\nGreat success!">>.
