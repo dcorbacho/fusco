@@ -529,8 +529,6 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, _, <<"close">>) ->
     lhttpc_sock:close(Socket, State#client_state.ssl),
     undefined;
-maybe_close_socket(#client_state{socket = Socket}, {1, 1}, [], _) ->
-    Socket;
 maybe_close_socket(#client_state{socket = Socket}, {1, 1}, undefined, _) ->
     Socket;
 maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ConHdr, _) ->
@@ -542,14 +540,12 @@ maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ConHdr, _) ->
         (not ClientConnection) ->
             Socket
     end;
-maybe_close_socket(#client_state{socket = Socket}, _, [], <<"keep-alive">>) ->
+maybe_close_socket(#client_state{socket = Socket}, _, undefined, <<"keep-alive">>) ->
     Socket;
 maybe_close_socket(#client_state{socket = Socket} = State, _, _, C)
   when C =/= <<"keep-alive">> ->
     lhttpc_sock:close(Socket, State#client_state.ssl),
     undefined;
-maybe_close_socket(#client_state{socket = Socket}, _, undefined, _) ->
-    Socket;
 maybe_close_socket(#client_state{socket = Socket} = State, _, ConHdr, _) ->
     ClientConnection = lhttpc_lib:is_close(ConHdr),
     if
