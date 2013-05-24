@@ -135,10 +135,10 @@ slow_chunked_response(Module, Socket, _, _, _) ->
 
 
 chunked_upload(Module, Socket, _, Headers, <<>>) ->
-    TransferEncoding = lhttpc_lib:header_value("transfer-encoding", Headers),
+    TransferEncoding = fusco_lib:header_value("transfer-encoding", Headers),
     {Body, HeadersAndTrailers} =
         webserver:read_chunked(Module, Socket, Headers),
-    Trailer1 = lhttpc_lib:header_value("x-trailer-1", HeadersAndTrailers,
+    Trailer1 = fusco_lib:header_value("x-trailer-1", HeadersAndTrailers,
         "undefined"),
     Module:send(
         Socket,
@@ -382,7 +382,7 @@ set_cookie_response(Module, Socket, _, _, _) ->
 
 
 expired_cookie_response(Module, Socket, _Request, Headers, _Body) ->
-    case lhttpc_lib:header_value("Cookie", Headers) of
+    case fusco_lib:header_value("Cookie", Headers) of
             undefined ->
                 Module:send(
                     Socket,

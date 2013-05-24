@@ -7,7 +7,6 @@
 -module(test_utils).
 
 -export([start_listener/1,
-	 start_listener/1,
 	 send_message/1,
 	 stop_listener/1]).
 

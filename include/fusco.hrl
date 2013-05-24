@@ -24,7 +24,7 @@
 %%% ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 %%% ----------------------------------------------------------------------------
 
--record(lhttpc_url, {
+-record(fusco_url, {
     host :: string(),
     port :: integer(),
     path :: string(),
@@ -33,7 +33,7 @@
     password = "" :: string()
 }).
 
--record(lhttpc_cookie, {
+-record(fusco_cookie, {
 	  name :: binary(),
 	  value :: binary(),
 	  expires :: {{integer(), integer(), integer()},

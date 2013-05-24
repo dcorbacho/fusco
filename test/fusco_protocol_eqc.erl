@@ -4,10 +4,10 @@
 %%% @doc
 %%% @end
 %%%=============================================================================
--module(lhttpc_protocol_eqc).
+-module(fusco_protocol_eqc).
 
 -include_lib("eqc/include/eqc.hrl").
--include("lhttpc.hrl").
+-include("fusco.hrl").
 
 -export([prop_http_response/0]).
 
@@ -48,7 +48,7 @@ prop_http_response() ->
 		  Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
 		  L = {_, _, Socket} = test_utils:start_listener({fragmented, Msg}),
 		  test_utils:send_message(Socket),
-		  Recv = lhttpc_protocol:recv(Socket, false),
+		  Recv = fusco_protocol:recv(Socket, false),
 		  test_utils:stop_listener(L),
 		  Expected = expected_output(StatusLine, Headers, Cookies, Body, Msg),
 		  Cleared = clear_record(clear_connection(clear_timestamps(Recv))),
@@ -95,7 +95,7 @@ output_cookies([{_SetCookie, {{K, V}, Avs}} | Rest], Acc) ->
     MaxAge = output_max_age(proplists:get_value(<<"Max-Age">>, Avs)),
     Path = proplists:get_value(<<"Path">>, Avs),
     Expires = output_expires(proplists:get_value(<<"Expires">>, Avs)),
-    Cookie = #lhttpc_cookie{name = K, value = V, max_age = MaxAge, path = Path,
+    Cookie = #fusco_cookie{name = K, value = V, max_age = MaxAge, path = Path,
 			    expires = Expires},
     output_cookies(Rest, [Cookie | Acc]);
 output_cookies([], Acc) ->
@@ -135,7 +135,7 @@ clear_record(Response) ->
 		      in_timestamp = undefined}.
 
 clear_timestamps(Response) when is_record(Response, response) ->
-    Response#response{cookies = [Co#lhttpc_cookie{timestamp=undefined}
+    Response#response{cookies = [Co#fusco_cookie{timestamp=undefined}
 				 || Co <- Response#response.cookies]};
 clear_timestamps(Error) ->
     Error.

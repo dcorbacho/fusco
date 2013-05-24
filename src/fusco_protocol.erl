@@ -4,10 +4,10 @@
 %%% @doc
 %%% @end
 %%%=============================================================================
--module(lhttpc_protocol).
+-module(fusco_protocol).
 -copyright("2013, Erlang Solutions Ltd.").
 
--include("lhttpc.hrl").
+-include("fusco.hrl").
 
 -define(SIZE(Data, Response), Response#response{size = Response#response.size + byte_size(Data)}).
 -define(RECEPTION(Data, Response), Response#response{size = byte_size(Data),
@@ -25,7 +25,7 @@
 %% TODO handle partial downloads
 
 recv(Socket, Ssl) ->
-    case lhttpc_sock:recv(Socket, Ssl) of
+    case fusco_sock:recv(Socket, Ssl) of
 	{ok, Data} ->
 	    decode_status_line(<< Data/binary >>,
 			       ?RECEPTION(Data, #response{socket = Socket, ssl = Ssl}));
@@ -38,7 +38,7 @@ decode_status_line(<<"HTTP/1.0\s", Rest/bits>>, Response) ->
 decode_status_line(<<"HTTP/1.1\s", Rest/bits>>, Response) ->
     decode_status_code(Rest, Response#response{version = {1,1}});
 decode_status_line(Bin, Response = #response{size = Size}) when Size < 10 ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_status_line(<<Bin/binary, Data/binary>>, ?SIZE(Data, Response));
 	{error, Reason} ->
@@ -50,7 +50,7 @@ decode_status_line(_, _) ->
 decode_status_code(<<C1,C2,C3,$\s,Rest/bits>>, Response) ->
     decode_reason_phrase(Rest, <<>>, Response#response{status_code = <<C1,C2,C3>>});
 decode_status_code(Bin, Response) when byte_size(Bin) < 4 ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_status_code(<<Bin/binary, Data/binary>>, ?SIZE(Data, Response));
 	{error, Reason} ->
@@ -60,14 +60,14 @@ decode_status_code(_, _) ->
     {error, status_code}.
 
 decode_reason_phrase(<<>>, Acc, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_reason_phrase(Data, Acc, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
 decode_reason_phrase(<<$\r>>, Acc, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_reason_phrase(<<$\r, Data/binary>>, Acc, ?SIZE(Data, Response));
 	{error, Reason} ->
@@ -81,7 +81,7 @@ decode_reason_phrase(<<C, Rest/bits>>, Acc, Response) ->
     decode_reason_phrase(Rest, <<Acc/binary, C>>, Response).
 
 decode_header(<<>>, Acc, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_header(Data, Acc, ?SIZE(Data, Response));
 	{error, closed} ->
@@ -95,7 +95,7 @@ decode_header(<<>>, Acc, Response) ->
 	    {error, Reason}
     end;
 decode_header(<<$\r>>, Acc, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_header(<<$\r, Data/binary>>, Acc, ?SIZE(Data, Response));
 	{error, Reason} ->
@@ -176,14 +176,14 @@ decode_header_value_ws(Rest, H, S) ->
     decode_header_value(Rest, H, <<>>, <<>>, S).
 
 decode_header_value(<<>>, H, V, T, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_header_value(Data, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
 decode_header_value(<<$\r>>, H, V, T, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_header_value(<<$\r, Data/binary>>, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
@@ -217,14 +217,14 @@ decode_header_value(<<C, Rest/bits>>, H, V, T, Response) ->
     decode_header_value(Rest, H, <<V/binary, T/binary, C>>, <<>>, Response).
 
 decode_header_value_lc(<<>>, H, V, T, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_header_value_lc(Data, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
 	    {error, Reason}
     end;
 decode_header_value_lc(<<$\r>>, H, V, T, Response) ->
-    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_header_value_lc(<<$\r, Data/binary>>, H, V, T, ?SIZE(Data, Response));
 	{error, Reason} ->
@@ -314,11 +314,11 @@ decode_cookie_value(<<$\s, Rest/bits>>, N, V) ->
 decode_cookie_value(<<$\t, Rest/bits>>, N, V) ->
     decode_cookie_value(Rest, N, V);
 decode_cookie_value(<<$;, Rest/bits>>, N, V) ->
-    decode_cookie_av_ws(Rest, #lhttpc_cookie{name = N, value = V});
+    decode_cookie_av_ws(Rest, #fusco_cookie{name = N, value = V});
 decode_cookie_value(<<C, Rest/bits>>, N, V) ->
     decode_cookie_value(Rest, N, <<V/binary, C>>);
 decode_cookie_value(<<>>, N, V) ->
-    #lhttpc_cookie{name = N, value = V}.
+    #fusco_cookie{name = N, value = V}.
 
 decode_cookie_av_ws(<<$\s, Rest/bits>>, C) ->
     decode_cookie_av_ws(Rest, C);
@@ -380,21 +380,21 @@ decode_cookie_av(<<>>, Co, _AV) ->
     ignore_cookie_av(<<>>, Co).
 
 decode_cookie_av_value(<<>>, Co, <<"path">>, Value) ->
-    Co#lhttpc_cookie{path = Value};
+    Co#fusco_cookie{path = Value};
 decode_cookie_av_value(<<>>, Co, <<"max-age">>, Value) ->
-    Co#lhttpc_cookie{max_age = max_age(Value),
+    Co#fusco_cookie{max_age = max_age(Value),
 		     timestamp = calendar:universal_time()};
 decode_cookie_av_value(<<>>, Co, <<"expires">>, Value) ->
-    Co#lhttpc_cookie{expires = expires(Value)};
+    Co#fusco_cookie{expires = expires(Value)};
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"path">>, Value) ->
-    decode_cookie_av_ws(Rest, Co#lhttpc_cookie{path = Value});
+    decode_cookie_av_ws(Rest, Co#fusco_cookie{path = Value});
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"max-age">>, Value) ->
-    decode_cookie_av_ws(Rest, Co#lhttpc_cookie{
+    decode_cookie_av_ws(Rest, Co#fusco_cookie{
 				max_age = max_age(Value),
 				timestamp = calendar:universal_time()});
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"expires">>, Value) ->
     %% TODO parse expires
-    decode_cookie_av_ws(Rest, Co#lhttpc_cookie{expires = expires(Value)});
+    decode_cookie_av_ws(Rest, Co#fusco_cookie{expires = expires(Value)});
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, _, _) ->
     decode_cookie_av_ws(Rest, Co);
 decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
@@ -414,7 +414,7 @@ decode_body(Rest, Response) ->
 	true ->
 	    return(Rest, Response);
 	false ->
-	    case lhttpc_sock:recv(Response#response.socket, Response#response.ssl) of
+	    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 		{ok, Data} ->
 		    decode_body(<<Rest/binary, Data/binary>>, ?SIZE(Data, Response));
 		_ ->

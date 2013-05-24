@@ -38,7 +38,7 @@ connect(Port) ->
 listen() ->
     {ok, LS} = gen_tcp:listen(0, [{active, false}, {ip, {127,0,0,1}}, binary]),
     {ok, Port} = inet:port(LS),
-    ok = application:set_env(lhttpc, test_port, Port),
+    ok = application:set_env(fusco, test_port, Port),
     LS.
 
 accept(LS) ->

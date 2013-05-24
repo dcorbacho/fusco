@@ -25,10 +25,10 @@
 %%% ----------------------------------------------------------------------------
 
 %%% @author Oscar Hellström <oscar@hellstrom.st>
--module(lhttpc_lib_tests).
+-module(fusco_lib_tests).
 
--include("../include/lhttpc_types.hrl").
--include("../include/lhttpc.hrl").
+-include("../include/fusco_types.hrl").
+-include("../include/fusco.hrl").
 -include_lib("eunit/include/eunit.hrl").
 
 -define(HEADER1, [{<<"x-frame-options">>, <<"SAMEORIGIN">>},
@@ -48,7 +48,7 @@
 
 parse_url_test_() ->
     [
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 80,
                          path = "/",
@@ -56,9 +56,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://host")),
+                      fusco_lib:parse_url("http://host")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 80,
                          path = "/",
@@ -66,9 +66,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://host/")),
+                      fusco_lib:parse_url("http://host/")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 443,
                          path = "/",
@@ -76,9 +76,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("https://host")),
+                      fusco_lib:parse_url("https://host")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 443,
                          path = "/",
@@ -86,9 +86,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("https://host/")),
+                      fusco_lib:parse_url("https://host/")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/",
@@ -96,9 +96,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://host:180")),
+                      fusco_lib:parse_url("http://host:180")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/",
@@ -106,9 +106,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://host:180/")),
+                      fusco_lib:parse_url("http://host:180/")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo",
@@ -116,9 +116,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://host:180/foo")),
+                      fusco_lib:parse_url("http://host:180/foo")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo/bar",
@@ -126,9 +126,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://host:180/foo/bar")),
+                      fusco_lib:parse_url("http://host:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo/bar",
@@ -136,10 +136,10 @@ parse_url_test_() ->
                          user = "joe",
                          password = "erlang"
                         },
-                      lhttpc_lib:parse_url("http://joe:erlang@host:180/foo/bar")),
+                      fusco_lib:parse_url("http://joe:erlang@host:180/foo/bar")),
 
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo/bar",
@@ -147,9 +147,9 @@ parse_url_test_() ->
                          user = "joe",
                          password = "erl@ng"
                         },
-                      lhttpc_lib:parse_url("http://joe:erl%40ng@host:180/foo/bar")),
+                      fusco_lib:parse_url("http://joe:erl%40ng@host:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo/bar",
@@ -157,9 +157,9 @@ parse_url_test_() ->
                          user = "joe",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://joe@host:180/foo/bar")),
+                      fusco_lib:parse_url("http://joe@host:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo/bar",
@@ -167,9 +167,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://@host:180/foo/bar")),
+                      fusco_lib:parse_url("http://@host:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo/bar",
@@ -177,9 +177,9 @@ parse_url_test_() ->
                          user = "joe:arm",
                          password = "erlang"
                         },
-                      lhttpc_lib:parse_url("http://joe%3Aarm:erlang@host:180/foo/bar")),
+                      fusco_lib:parse_url("http://joe%3Aarm:erlang@host:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "host",
                          port = 180,
                          path = "/foo/bar",
@@ -187,9 +187,9 @@ parse_url_test_() ->
                          user = "joe:arm",
                          password = "erlang/otp"
                         },
-                      lhttpc_lib:parse_url("http://joe%3aarm:erlang%2Fotp@host:180/foo/bar")),
+                      fusco_lib:parse_url("http://joe%3aarm:erlang%2Fotp@host:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "::1",
                          port = 80,
                          path = "/foo/bar",
@@ -197,9 +197,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://[::1]/foo/bar")),
+                      fusco_lib:parse_url("http://[::1]/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "::1",
                          port = 180,
                          path = "/foo/bar",
@@ -207,9 +207,9 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://[::1]:180/foo/bar")),
+                      fusco_lib:parse_url("http://[::1]:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "::1",
                          port = 180,
                          path = "/foo/bar",
@@ -217,9 +217,9 @@ parse_url_test_() ->
                          user = "joe",
                          password = "erlang"
                         },
-                      lhttpc_lib:parse_url("http://joe:erlang@[::1]:180/foo/bar")),
+                      fusco_lib:parse_url("http://joe:erlang@[::1]:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "1080:0:0:0:8:800:200c:417a",
                          port = 180,
                          path = "/foo/bar",
@@ -227,9 +227,9 @@ parse_url_test_() ->
                          user = "joe",
                          password = "erlang"
                         },
-                      lhttpc_lib:parse_url("http://joe:erlang@[1080:0:0:0:8:800:200C:417A]:180/foo/bar")),
+                      fusco_lib:parse_url("http://joe:erlang@[1080:0:0:0:8:800:200C:417A]:180/foo/bar")),
 
-        ?_assertEqual(#lhttpc_url{
+        ?_assertEqual(#fusco_url{
                          host = "www.example.com",
                          port = 80,
                          path = "/?a=b",
@@ -237,5 +237,5 @@ parse_url_test_() ->
                          user = "",
                          password = ""
                         },
-                      lhttpc_lib:parse_url("http://www.example.com?a=b"))
+                      fusco_lib:parse_url("http://www.example.com?a=b"))
     ].

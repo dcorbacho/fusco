@@ -25,7 +25,7 @@
 %%% ----------------------------------------------------------------------------
 
 %%% @author Oscar Hellström <oscar@hellstrom.st>
--module(lhttpc_tests).
+-module(fusco_tests).
 
 -export([test_no/2]).
 
@@ -106,13 +106,13 @@ simple_get_ipv6() ->
 empty_get() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/empty", "GET", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/empty", "GET", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 connection_refused() ->
-    Response = lhttpc:connect("http://127.0.0.1:50234/none", []),
+    Response = fusco:connect("http://127.0.0.1:50234/none", []),
     ?assertEqual({error, econnrefused}, Response).
 
 basic_auth() ->
@@ -120,8 +120,8 @@ basic_auth() ->
     Passwd = "bar",
     {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/empty", "GET",
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/empty", "GET",
 				    [{<<"Authorization">>,
 					     ["Basic ", base64:encode(User ++ ":" ++ Passwd)]}],
 				    [], 1000),
@@ -133,8 +133,8 @@ missing_basic_auth() ->
     Passwd = "bar",
     {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/empty", "GET", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/empty", "GET", [], [], 1000),
     ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
     ?assertEqual(<<"missing_auth">>, body(Response)).
 
@@ -143,8 +143,8 @@ wrong_basic_auth() ->
     Passwd = "bar",
     {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/empty", "GET",
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/empty", "GET",
 					   [{<<"Authorization">>,
 					     ["Basic ", base64:encode(User ++ ":wrong_password")]}],
 				    [], 1000),
@@ -159,8 +159,8 @@ get_with_mandatory_hdrs() ->
 	    {<<"content-length">>, integer_to_list(size(Body))},
 	    {<<"host">>, "localhost"}
 	   ],
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/host", "POST", Hdrs, Body, 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/host", "POST", Hdrs, Body, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
@@ -168,84 +168,84 @@ get_with_connect_options() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port),
     Options = [{connect_options, [{ip, {127, 0, 0, 1}}, {port, 0}]}],
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/empty", "GET", [], [], 1000, Options),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/empty", "GET", [], [], 1000, Options),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 no_content_length() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_length/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/no_cl", "GET", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/no_cl", "GET", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 no_content_length_1_0() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_length_1_0/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/no_cl", "GET", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/no_cl", "GET", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 %% Check the header value is trimming spaces on header values
-%% which can cause crash in lhttpc_client:body_type when Content-Length
+%% which can cause crash in fusco_client:body_type when Content-Length
 %% is converted from list to integer
 trailing_space_header() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:trailing_space_header/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/no_cl", "GET", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/no_cl", "GET", [], [], 1000),
     Headers = headers(Response),
-    ContentLength = lhttpc_lib:header_value(<<"content-length">>, Headers),
+    ContentLength = fusco_lib:header_value(<<"content-length">>, Headers),
     ?assertEqual(<<"14">>, ContentLength).
 
 get_not_modified() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:not_modified_response/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/not_modified", "GET", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/not_modified", "GET", [], [], 1000),
     ?assertEqual({<<"304">>, <<"Not Modified">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 simple_head() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:head_response/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/HEAD", "HEAD", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/HEAD", "HEAD", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 delete_no_content() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_response/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/delete_no_content", "DELETE", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/delete_no_content", "DELETE", [], [], 1000),
     ?assertEqual({<<"204">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 delete_content() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/delete_content", "DELETE", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/delete_content", "DELETE", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 options_no_content() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:head_response/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/options_no_content", "OPTIONS", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/options_no_content", "OPTIONS", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
 
 options_content() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/options_content", "OPTIONS", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/options_content", "OPTIONS", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
@@ -253,8 +253,8 @@ server_connection_close() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:respond_and_close/5]),
     URL = url(Port),
     Body = pid_to_list(self()),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/close", "PUT", [], Body, 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/close", "PUT", [], Body, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)),
     receive closed -> ok end.
@@ -264,8 +264,8 @@ client_connection_close() ->
     URL = url(Port),
     Body = pid_to_list(self()),
     Hdrs = [{<<"Connection">>, <<"close">>}],
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, _} = lhttpc:request(Client, "/close", "PUT", Hdrs, Body, 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, _} = fusco:request(Client, "/close", "PUT", Hdrs, Body, 1000),
     % Wait for the server to see that socket has been closed
     receive closed -> ok end.
 
@@ -273,8 +273,8 @@ pre_1_1_server_connection() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:pre_1_1_server/5]),
     URL = url(Port),
     Body = pid_to_list(self()),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, _} = lhttpc:request(Client, "/close", "PUT", [], Body, 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, _} = fusco:request(Client, "/close", "PUT", [], Body, 1000),
     % Wait for the server to see that socket has been closed.
     % The socket should be closed by us since the server responded with a
     % 1.0 version, and not the Connection: keep-alive header.
@@ -288,9 +288,9 @@ pre_1_1_server_keep_alive() ->
 				   ]),
     URL = url(Port),
     Body = pid_to_list(self()),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response1} = lhttpc:request(Client, "/close", "GET", [], [], 1000, []),
-    {ok, Response2} = lhttpc:request(Client, "/close", "PUT", [], Body, 1000, []),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response1} = fusco:request(Client, "/close", "GET", [], [], 1000, []),
+    {ok, Response2} = fusco:request(Client, "/close", "PUT", [], Body, 1000, []),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response2)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response1)),
@@ -313,8 +313,8 @@ post() ->
         integer_to_list(Y),
         integer_to_list(Z)
     ],
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/post", "POST", [], Body, 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/post", "POST", [], Body, 1000),
     {StatusCode, ReasonPhrase} = status(Response),
     ?assertEqual(<<"200">>, StatusCode),
     ?assertEqual(<<"OK">>, ReasonPhrase),
@@ -330,8 +330,8 @@ post_100_continue() ->
         integer_to_list(Y),
         integer_to_list(Z)
     ],
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/post", "POST", [], Body, 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/post", "POST", [], Body, 1000),
     {StatusCode, ReasonPhrase} = status(Response),
     ?assertEqual(<<"200">>, StatusCode),
     ?assertEqual(<<"OK">>, ReasonPhrase),
@@ -345,11 +345,11 @@ persistent_connection() ->
 				    fun webserver_utils:copy_body/5
 				   ]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, FirstResponse} = lhttpc:request(Client, "/persistent", "GET", [], [], 1000, []),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, FirstResponse} = fusco:request(Client, "/persistent", "GET", [], [], 1000, []),
     Headers = [{"KeepAlive", "300"}], % shouldn't be needed
-    {ok, SecondResponse} = lhttpc:request(Client, "/persistent", "GET", Headers, [], 1000, []),
-    {ok, ThirdResponse} = lhttpc:request(Client, "/persistent", "POST", [], [], 1000, []),
+    {ok, SecondResponse} = fusco:request(Client, "/persistent", "GET", Headers, [], 1000, []),
+    {ok, ThirdResponse} = fusco:request(Client, "/persistent", "POST", [], [], 1000, []),
     ?assertEqual({<<"200">>, <<"OK">>}, status(FirstResponse)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(FirstResponse)),
     ?assertEqual({<<"200">>, <<"OK">>}, status(SecondResponse)),
@@ -360,29 +360,29 @@ persistent_connection() ->
 request_timeout() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:very_slow_response/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    ?assertEqual({error, timeout}, lhttpc:request(Client, "/slow", "GET", [], [], 50)).
+    {ok, Client} = fusco:connect(URL, []),
+    ?assertEqual({error, timeout}, fusco:request(Client, "/slow", "GET", [], [], 50)).
 
 close_connection() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:close_connection/5]),
     URL = url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/close", "GET", [], [], 1000),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/close", "GET", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)).
 
 ssl_get() ->
     {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5]),
     URL = ssl_url(Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/simple", "GET", [], [], 1000, []),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1000, []),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
 ssl_get_ipv6() ->
     {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5], inet6),
     URL = ssl_url(inet6, Port),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/simple", "GET", [], [], 1000, []),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1000, []),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
 
@@ -391,17 +391,17 @@ ssl_post() ->
     URL = ssl_url(Port),
     Body = "SSL Test <o/",
     BinaryBody = list_to_binary(Body),
-    {ok, Client} = lhttpc:connect(URL, []),
-    {ok, Response} = lhttpc:request(Client, "/simple", "POST", [], Body, 1000, []),
+    {ok, Client} = fusco:connect(URL, []),
+    {ok, Response} = fusco:request(Client, "/simple", "POST", [], Body, 1000, []),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(BinaryBody, body(Response)).
 
 invalid_options() ->
     ?assertError({bad_option, bad_option},
-        lhttpc:request(client, "http://localhost/", "GET", [], <<>>, 1000,
+        fusco:request(client, "http://localhost/", "GET", [], <<>>, 1000,
             [bad_option, {foo, bar}])),
     ?assertError({bad_option, {foo, bar}},
-        lhttpc:request(client, "http://localhost/", "GET", [], <<>>, 1000,
+        fusco:request(client, "http://localhost/", "GET", [], <<>>, 1000,
             [{foo, bar}, bad_option])).
 
 cookies() ->
@@ -409,12 +409,12 @@ cookies() ->
             fun webserver_utils:receive_right_cookies/5]),
     URL = url(Port),
     Options = [{use_cookies, true}],
-    {ok, Client} = lhttpc:connect(URL, Options),
-    {ok, Response1} = lhttpc:request(Client, "/cookies", "GET", [], <<>>, 1000),
+    {ok, Client} = fusco:connect(URL, Options),
+    {ok, Response1} = fusco:request(Client, "/cookies", "GET", [], <<>>, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
-    {ok, Response2} = lhttpc:request(Client, "/cookies", "GET", [], <<>>, 1000),
+    {ok, Response2} = fusco:request(Client, "/cookies", "GET", [], <<>>, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response2)),
-    {ok, Response3} = lhttpc:request(Client, "/cookies", "GET", [], <<>>, 1000),
+    {ok, Response3} = fusco:request(Client, "/cookies", "GET", [], <<>>, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response3)).
 
 simple(Method) ->
@@ -427,8 +427,8 @@ simple(Method, Family) ->
             ?debugMsg("WARNING: impossible to test IPv6 support~n");
         {ok, _, _, Port} when is_number(Port) ->
             URL = url(Family, Port),
-	    {ok, Client} = lhttpc:connect(URL, []),
-            {ok, Response} = lhttpc:request(Client, "/simple", Method, [], [], 1000),
+	    {ok, Client} = fusco:connect(URL, []),
+            {ok, Response} = fusco:request(Client, "/simple", Method, [], [], 1000),
             {StatusCode, ReasonPhrase} = status(Response),
             ?assertEqual(<<"200">>, StatusCode),
             ?assertEqual(<<"OK">>, ReasonPhrase),

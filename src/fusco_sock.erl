@@ -31,16 +31,14 @@
 %%% This module implements wrappers for socket operations.
 %%% Makes it possible to have the same interface to ssl and tcp sockets.
 %%------------------------------------------------------------------------------
--module(lhttpc_sock).
+-module(fusco_sock).
 
 -export([connect/5,
-         recv/2, recv/3,
-         send/3,
-         controlling_process/3,
-         setopts/3,
+         recv/2,
+	 send/3,
          close/2]).
 
--include("lhttpc_types.hrl").
+-include("fusco_types.hrl").
 
 %%==============================================================================
 %% Exported functions
@@ -89,26 +87,6 @@ recv(Socket, false) ->
     prim_inet:recv(Socket, 0).
 
 %%------------------------------------------------------------------------------
-%% @spec (Socket, Length, SslFlag) -> {ok, Data} | {error, Reason}
-%%   Socket = socket()
-%%   Length = integer()
-%%   SslFlag = boolean()
-%%   Data = term()
-%%   Reason = atom()
-%% @doc
-%% Receives `Length' bytes from `Socket'.
-%% Will block untill `Length' bytes is available.
-%% @end
-%%------------------------------------------------------------------------------
--spec recv(socket(), integer(), boolean()) -> {ok, any()} | {error, atom()}.
-recv(_, 0, _) ->
-    {ok, <<>>};
-recv(Socket, Length, true) ->
-    ssl:recv(Socket, Length);
-recv(Socket, Length, false) ->
-    gen_tcp:recv(Socket, Length).
-
-%%------------------------------------------------------------------------------
 %% @spec (Socket, Data, SslFlag) -> ok | {error, Reason}
 %%   Socket = socket()
 %%   Data = iolist()
@@ -125,40 +103,6 @@ send(Socket, Request, true) ->
     ssl:send(Socket, Request);
 send(Socket, Request, false) ->
     prim_inet:send(Socket, Request, []).
-
-%%------------------------------------------------------------------------------
-%% @spec (Socket, Process, SslFlag) -> ok | {error, Reason}
-%%   Socket = socket()
-%%   Process = pid() | atom()
-%%   SslFlag = boolean()
-%%   Reason = atom()
-%% @doc
-%% Sets the controlling proces for the `Socket'.
-%% @end
-%%------------------------------------------------------------------------------
--spec controlling_process(socket(), pid() | atom(), boolean()) -> ok | {error, atom()}.
-controlling_process(Socket, Controller, IsSsl) when is_atom(Controller) ->
-    controlling_process(Socket, whereis(Controller), IsSsl);
-controlling_process(Socket, Pid, true) ->
-    ssl:controlling_process(Socket, Pid);
-controlling_process(Socket, Pid, false) ->
-    gen_tcp:controlling_process(Socket, Pid).
-
-%%------------------------------------------------------------------------------
-%% @spec (Socket, Options, SslFlag) -> ok | {error, Reason}
-%%   Socket = socket()
-%%   Options = [atom() | {atom(), term()}]
-%%   SslFlag = boolean()
-%%   Reason = atom()
-%% @doc
-%% Sets options for a socket. Look in `inet:setopts/2' for more info.
-%% @end
-%%------------------------------------------------------------------------------
--spec setopts(socket(), socket_options(), boolean()) -> ok | {error, atom()}.
-setopts(Socket, Options, true) ->
-    ssl:setopts(Socket, Options);
-setopts(Socket, Options, false) ->
-    inet:setopts(Socket, Options).
 
 %%------------------------------------------------------------------------------
 %% @spec (Socket, SslFlag) -> ok | {error, Reason}

@@ -30,10 +30,10 @@
 %%% @author Diana Parra Corbacho <diana.corbacho@erlang-solutions.com>
 %%% @author Ramon Lastres Guerrero <ramon.lastres@erlang-solutions.com>
 %%% @doc This module implements the HTTP request handling. This should normally
-%%% not be called directly since it should be spawned by the lhttpc module.
+%%% not be called directly since it should be spawned by the fusco module.
 %%% @end
 %%------------------------------------------------------------------------------
--module(lhttpc).
+-module(fusco).
 
 %exported functions
 -export([connect/2,
@@ -50,8 +50,8 @@
          terminate/2,
          code_change/3]).
 
--include("lhttpc_types.hrl").
--include("lhttpc.hrl").
+-include("fusco_types.hrl").
+-include("fusco.hrl").
 
 -define(HTTP_LINE_END, "\r\n").
 
@@ -66,12 +66,12 @@
         request :: iolist() | undefined,
 	connection_header,
         requester,
-        cookies = [] :: [#lhttpc_cookie{}],
+        cookies = [] :: [#fusco_cookie{}],
         use_cookies = false :: boolean(),
         %% in case of infinity we read whatever data we can get from
         %% the wire at that point
         attempts = 0 :: integer(),
-        proxy :: undefined | #lhttpc_url{},
+        proxy :: undefined | #fusco_url{},
         proxy_ssl_options = [] :: [any()],
         proxy_setup = false :: boolean(),
 	host_header,
@@ -125,9 +125,9 @@ request(Client, Path, Method, Hdrs, Body, Timeout, []) ->
     request(Client, Path, Method, Hdrs, Body, false, 1, [], Timeout);
 request(Client, Path, Method, Hdrs, Body, Timeout, Options) ->
     verify_options(Options),
-    ProxyInfo = lhttpc_lib:get_value(proxy, Options, false),
-    SendRetry = lhttpc_lib:get_value(send_retry, Options, 1),
-    ProxySsl = lhttpc_lib:get_value(proxy_ssl_options, Options, []),
+    ProxyInfo = fusco_lib:get_value(proxy, Options, false),
+    SendRetry = fusco_lib:get_value(send_retry, Options, 1),
+    ProxySsl = fusco_lib:get_value(proxy_ssl_options, Options, []),
     request(Client, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl, Timeout).
 
 %%------------------------------------------------------------------------------
@@ -238,22 +238,22 @@ request(Client, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl, Timeou
 %%% gen_server callbacks
 %%%===================================================================
 init({Destination, Options}) ->
-    ConnectTimeout = lhttpc_lib:get_value(connect_timeout, Options, infinity),
-    ConnectOptions = lhttpc_lib:get_value(connect_options, Options, []),
-    UseCookies = lhttpc_lib:get_value(use_cookies, Options, false),
+    ConnectTimeout = fusco_lib:get_value(connect_timeout, Options, infinity),
+    ConnectOptions = fusco_lib:get_value(connect_options, Options, []),
+    UseCookies = fusco_lib:get_value(use_cookies, Options, false),
     {Host, Port, Ssl} = case Destination of
         {H, P, S} ->
             {H, P, S};
         URL ->
-            #lhttpc_url{host = H, port = P,
-                        is_ssl = S} = lhttpc_lib:parse_url(URL),
+            #fusco_url{host = H, port = P,
+                        is_ssl = S} = fusco_lib:parse_url(URL),
             {H, P, S}
     end,
     State = #client_state{host = Host, port = Port, ssl = Ssl,
                           connect_timeout = ConnectTimeout,
                           connect_options = ConnectOptions,
                           use_cookies = UseCookies,
-			  host_header = lhttpc_lib:host_header(Host, Port)},
+			  host_header = fusco_lib:host_header(Host, Port)},
     %% Get a socket or exit
     case connect_socket(State) of
         {ok, NewState} ->
@@ -272,7 +272,7 @@ handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl},
                                   socket = Socket, cookies = Cookies,
                                   use_cookies = UseCookies}) ->
     {Request, ConHeader} =
-	lhttpc_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
+	fusco_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
     NewState = case ProxyInfo of
 		   false ->
 		       State#client_state{
@@ -291,7 +291,7 @@ handle_call({request, Path, Method, Hdrs, Body, ProxyInfo, SendRetry, ProxySsl},
 			 requester = From,
 			 connection_header = ConHeader,
 			 attempts = SendRetry,
-			 proxy = lhttpc_lib:parse_url(ProxyUrl),
+			 proxy = fusco_lib:parse_url(ProxyUrl),
 			 proxy_setup = (Socket /= undefined),
 			 proxy_ssl_options = ProxySsl}			   		       
 	       end,
@@ -341,7 +341,7 @@ terminate(_Reason, #client_state{socket = Socket, ssl = Ssl}) ->
         undefined ->
             ok;
         _ ->
-	    lhttpc_sock:close(Socket, Ssl),
+	    fusco_sock:close(Socket, Ssl),
 	    ok
     end.
 
@@ -375,10 +375,10 @@ send_request(#client_state{socket = undefined} = State) ->
         {Error, NewState} ->
             {reply, Error, NewState}
     end;
-send_request(#client_state{proxy = #lhttpc_url{}, proxy_setup = false,
+send_request(#client_state{proxy = #fusco_url{}, proxy_setup = false,
                            host = DestHost, port = Port, socket = Socket} = State) ->
     %% use a proxy.
-    #lhttpc_url{user = User, password = Passwd, is_ssl = Ssl} = State#client_state.proxy,
+    #fusco_url{user = User, password = Passwd, is_ssl = Ssl} = State#client_state.proxy,
     Host = case inet_parse:address(DestHost) of
         {ok, {_, _, _, _, _, _, _, _}} ->
             %% IPv6 address literals are enclosed by square brackets (RFC2732)
@@ -397,16 +397,16 @@ send_request(#client_state{proxy = #lhttpc_url{}, proxy_setup = false,
                      base64:encode(User ++ ":" ++ Passwd), ?HTTP_LINE_END]
             end,
             ?HTTP_LINE_END],
-    case lhttpc_sock:send(Socket, ConnectRequest, Ssl) of
+    case fusco_sock:send(Socket, ConnectRequest, Ssl) of
         ok ->
             {Reply, NewState} = read_proxy_connect_response(State, nil, nil),
             {reply, Reply, NewState};
         {error, closed} ->
-            lhttpc_sock:close(Socket, Ssl),
+            fusco_sock:close(Socket, Ssl),
             {reply, {error, proxy_connection_closed},
              State#client_state{socket = undefined}};
         {error, _Reason} ->
-            lhttpc_sock:close(Socket, Ssl),
+            fusco_sock:close(Socket, Ssl),
             {reply, {error, proxy_connection_closed},
              State#client_state{socket = undefined}}
     end;
@@ -414,22 +414,22 @@ send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
                            attempts = Attempts} = State) ->
     %% no proxy
     Out = os:timestamp(),
-    case lhttpc_sock:send(Socket, Request, Ssl) of
+    case fusco_sock:send(Socket, Request, Ssl) of
         ok ->
 	    read_response(State#client_state{out_timestamp = Out});
         {error, closed} ->
-            lhttpc_sock:close(Socket, Ssl),
+            fusco_sock:close(Socket, Ssl),
             send_request(State#client_state{socket = undefined, attempts = Attempts - 1});
         {error, _Reason} ->
-            lhttpc_sock:close(Socket, Ssl),
+            fusco_sock:close(Socket, Ssl),
             {reply, {error, connection_closed}, State#client_state{socket = undefined}}
     end.
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-request_first_destination(#client_state{proxy = #lhttpc_url{} = Proxy}) ->
-    {Proxy#lhttpc_url.host, Proxy#lhttpc_url.port, Proxy#lhttpc_url.is_ssl};
+request_first_destination(#client_state{proxy = #fusco_url{} = Proxy}) ->
+    {Proxy#fusco_url.host, Proxy#fusco_url.port, Proxy#fusco_url.is_ssl};
 request_first_destination(#client_state{host = Host, port = Port, ssl = Ssl}) ->
     {Host, Port, Ssl}.
 
@@ -438,8 +438,8 @@ request_first_destination(#client_state{host = Host, port = Port, ssl = Ssl}) ->
 %%------------------------------------------------------------------------------
 read_proxy_connect_response(State, StatusCode, StatusText) ->
     Socket = State#client_state.socket,
-    ProxyIsSsl = (State#client_state.proxy)#lhttpc_url.is_ssl,
-    case lhttpc_sock:recv(Socket, ProxyIsSsl) of
+    ProxyIsSsl = (State#client_state.proxy)#fusco_url.is_ssl,
+    case fusco_sock:recv(Socket, ProxyIsSsl) of
         {ok, {http_response, _Vsn, Code, Reason}} ->
             read_proxy_connect_response(State, Code, Reason);
         {ok, {http_header, _, _Name, _, _Value}} ->
@@ -461,14 +461,14 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
                 {ok, SslSocket} ->
                     State#client_state{socket = SslSocket, proxy_setup = true};
                 {error, Reason} ->
-                    lhttpc_sock:close(State#client_state.socket, State#client_state.ssl),
+                    fusco_sock:close(State#client_state.socket, State#client_state.ssl),
                     {{error, {proxy_connection_failed, Reason}}, State}
             end,
             send_request(State2);
         {ok, http_eoh} ->
             {{error, {proxy_connection_refused, StatusCode, StatusText}}, State};
         {error, closed} ->
-            lhttpc_sock:close(Socket, ProxyIsSsl),
+            fusco_sock:close(Socket, ProxyIsSsl),
             {{error, proxy_connection_closed},
              State#client_state{socket = undefined}};
         {error, Reason} ->
@@ -484,7 +484,7 @@ read_proxy_connect_response(State, StatusCode, StatusText) ->
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
                             connection_header = ConHdr, cookies = Cookies,
 			    requester = From, out_timestamp = Out} = State) ->
-    case lhttpc_protocol:recv(Socket, Ssl) of
+    case fusco_protocol:recv(Socket, Ssl) of
 	#response{status_code = <<$1,_,_>>} ->
 	    %% RFC 2616, section 10.1:
             %% A client MUST be prepared to accept one or more
@@ -505,14 +505,14 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 		    case UseCookies of
 			true ->
 			    {noreply, State#client_state{socket = undefined,
-							 cookies = lhttpc_lib:update_cookies(NewCookies, Cookies)}};
+							 cookies = fusco_lib:update_cookies(NewCookies, Cookies)}};
 			false ->
 			    {noreply, State#client_state{socket = undefined}}
 		    end;
 		_ ->
 		    case UseCookies of
 			true ->
-			    {noreply, State#client_state{cookies = lhttpc_lib:update_cookies(NewCookies, Cookies)}};
+			    {noreply, State#client_state{cookies = fusco_lib:update_cookies(NewCookies, Cookies)}};
 			_ ->
 			    {noreply, State}
 		    end
@@ -523,10 +523,10 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             % the request on the wire or the server has some isses and is
             % closing connections without sending responses.
             % If this the first attempt to send the request, we will try again.
-            lhttpc_sock:close(Socket, Ssl),
+            fusco_sock:close(Socket, Ssl),
             send_request(State#client_state{socket = undefined});
 	{error, Reason} ->
-	    lhttpc_sock:close(Socket, Ssl),
+	    fusco_sock:close(Socket, Ssl),
 	    {reply, {error, Reason}, State#client_state{socket = undefined}}
     end.
 
@@ -534,15 +534,15 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 %% @private
 %%------------------------------------------------------------------------------
 maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, _, <<"close">>) ->
-    lhttpc_sock:close(Socket, State#client_state.ssl),
+    fusco_sock:close(Socket, State#client_state.ssl),
     undefined;
 maybe_close_socket(#client_state{socket = Socket}, {1, 1}, undefined, _) ->
     Socket;
 maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ConHdr, _) ->
-    ClientConnection = lhttpc_lib:is_close(ConHdr),
+    ClientConnection = fusco_lib:is_close(ConHdr),
     if
         ClientConnection ->
-            lhttpc_sock:close(Socket, State#client_state.ssl),
+            fusco_sock:close(Socket, State#client_state.ssl),
             undefined;
         (not ClientConnection) ->
             Socket
@@ -551,13 +551,13 @@ maybe_close_socket(#client_state{socket = Socket}, _, undefined, <<"keep-alive">
     Socket;
 maybe_close_socket(#client_state{socket = Socket} = State, _, _, C)
   when C =/= <<"keep-alive">> ->
-    lhttpc_sock:close(Socket, State#client_state.ssl),
+    fusco_sock:close(Socket, State#client_state.ssl),
     undefined;
 maybe_close_socket(#client_state{socket = Socket} = State, _, ConHdr, _) ->
-    ClientConnection = lhttpc_lib:is_close(ConHdr),
+    ClientConnection = fusco_lib:is_close(ConHdr),
     if
         ClientConnection ->
-            lhttpc_sock:close(Socket, State#client_state.ssl),
+            fusco_sock:close(Socket, State#client_state.ssl),
             undefined;
         (not ClientConnection) ->
             Socket
@@ -619,7 +619,7 @@ new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOpt
     end,
     SocketOptions = [binary, {packet, raw}, {nodelay, true}, {reuseaddr, true},
                      {active, false} | ConnectOptions2],
-    try lhttpc_sock:connect(Host, Port, SocketOptions, Timeout, Ssl) of
+    try fusco_sock:connect(Host, Port, SocketOptions, Timeout, Ssl) of
         {ok, Socket} ->
             {ok, Socket};
         {error, etimedout} ->

@@ -29,9 +29,9 @@
 %%% @author Oscar Hellström <oscar@hellstrom.st>
 %%% @author Ramon Lastres Guerrero <ramon.lastres@erlang-solutions.com>
 %%% @doc
-%%% This module implements various library functions used in lhttpc
+%%% This module implements various library functions used in fusco
 %%------------------------------------------------------------------------------
--module(lhttpc_lib).
+-module(fusco_lib).
 
 -export([parse_url/1,
          format_request/6,
@@ -45,8 +45,8 @@
 	 host_header/2,
 	 is_close/1]).
 
--include("lhttpc_types.hrl").
--include("lhttpc.hrl").
+-include("fusco_types.hrl").
+-include("fusco.hrl").
 
 -define(HTTP_LINE_END, <<"\r\n">>).
 
@@ -91,19 +91,19 @@ maybe_atom_to_list(List) ->
     List.
 
 %%------------------------------------------------------------------------------
-%% @spec (URL) -> #lhttpc_url{}
+%% @spec (URL) -> #fusco_url{}
 %%   URL = string()
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec parse_url(string()) -> #lhttpc_url{}.
+-spec parse_url(string()) -> #fusco_url{}.
 parse_url(URL) ->
     % XXX This should be possible to do with the re module?
     {Scheme, CredsHostPortPath} = split_scheme(URL),
     {User, Passwd, HostPortPath} = split_credentials(CredsHostPortPath),
     {Host, PortPath} = split_host(HostPortPath, []),
     {Port, Path} = split_port(Scheme, PortPath, []),
-    #lhttpc_url{host = lhttpc_lib:to_lower(Host), port = Port, path = Path,
+    #fusco_url{host = fusco_lib:to_lower(Host), port = Port, path = Path,
                 user = User, password = Passwd, is_ssl = (Scheme =:= https)}.
 
 %%------------------------------------------------------------------------------
@@ -114,12 +114,12 @@ parse_url(URL) ->
 %% Headers = [{atom() | string(), string()}]
 %% Host = string()
 %% Body = iolist()
-%% Cookies = [#lhttpc_cookie{}]
+%% Cookies = [#fusco_cookie{}]
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
 -spec format_request(iolist(), method(), headers(), string(),  iolist(),
-                     {boolean(), [#lhttpc_cookie{}]}) -> {boolean(), iolist()}.
+                     {boolean(), [#fusco_cookie{}]}) -> {boolean(), iolist()}.
 format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
     {AllHdrs, ConHdr} =
 	add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, Cookies),
@@ -141,7 +141,7 @@ dec(Else) ->
 %% @doc Updated the state of the cookies. after we receive a response.
 %% @end
 %%------------------------------------------------------------------------------
--spec update_cookies(headers(), [#lhttpc_cookie{}]) -> [#lhttpc_cookie{}].
+-spec update_cookies(headers(), [#fusco_cookie{}]) -> [#fusco_cookie{}].
 update_cookies([], []) ->
     [];
 update_cookies([], StateCookies) ->
@@ -151,12 +151,12 @@ update_cookies(ReceivedCookies, []) ->
 update_cookies(ReceivedCookies, StateCookies) ->
     %% substitute the cookies with the same name, add the others, delete.
     Substituted =
-    	lists:foldl(fun(X = #lhttpc_cookie{value = <<"deleted">>}, Acc) ->
-			    lists:keydelete(X#lhttpc_cookie.name,
-					    #lhttpc_cookie.name, Acc);
+    	lists:foldl(fun(X = #fusco_cookie{value = <<"deleted">>}, Acc) ->
+			    lists:keydelete(X#fusco_cookie.name,
+					    #fusco_cookie.name, Acc);
 		       (X, Acc) ->
-    			    lists:keystore(X#lhttpc_cookie.name,
-					   #lhttpc_cookie.name, Acc, X)
+    			    lists:keystore(X#fusco_cookie.name,
+					   #fusco_cookie.name, Acc, X)
     		    end, StateCookies, ReceivedCookies),
     %% Delete the cookies that are expired (check max-age and expire fields).
     delete_expired_cookies(Substituted).
@@ -253,18 +253,18 @@ get_value(Key, List, Default) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
--spec delete_expired_cookies([#lhttpc_cookie{}]) -> [#lhttpc_cookie{}].
+-spec delete_expired_cookies([#fusco_cookie{}]) -> [#fusco_cookie{}].
 delete_expired_cookies([]) ->
     [];
 delete_expired_cookies(Cookies) ->
     [ X || X <- Cookies, not expires(X)].
 
-expires(#lhttpc_cookie{value = <<"deleted">>}) ->
+expires(#fusco_cookie{value = <<"deleted">>}) ->
     true;
-expires(#lhttpc_cookie{max_age = Max,
+expires(#fusco_cookie{max_age = Max,
 		       timestamp = T}) when Max =/= undefined ->
     timer:now_diff(os:timestamp(), T) > Max;
-expires(#lhttpc_cookie{expires = Exp}) when Exp =/= undefined ->
+expires(#fusco_cookie{expires = Exp}) when Exp =/= undefined ->
     calendar:universal_time() > Exp;
 expires(_) ->
     false.
@@ -359,7 +359,7 @@ split_port(Scheme, [P | T], Port) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec add_mandatory_hdrs(string(), method(), headers(), host(),
-                         iolist(), {boolean(), [#lhttpc_cookie{}]}) -> headers().
+                         iolist(), {boolean(), [#fusco_cookie{}]}) -> headers().
 add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {_, []}) ->
     add_headers(Hdrs, Method, Body, Host, undefined, []);
 add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {false, _}) ->
@@ -372,10 +372,10 @@ add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, {true, Cookies}) ->
     %% see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
     %% TODO optimize cookie handling
     case lists:filter(
-	   fun(#lhttpc_cookie{path = undefined}) ->
+	   fun(#fusco_cookie{path = undefined}) ->
 		   true;
 	      (X) ->
-		   IsPrefix = string:str(Path, X#lhttpc_cookie.path),
+		   IsPrefix = string:str(Path, X#fusco_cookie.path),
 		   if (IsPrefix =/= 1) ->
 			   false;
 		      true ->
@@ -408,7 +408,7 @@ make_cookie_string([Cookie | Rest], Acc) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-cookie_string(#lhttpc_cookie{name = Name, value = Value}) ->
+cookie_string(#fusco_cookie{name = Name, value = Value}) ->
     [Name, <<"=">>, Value].
 
 %%------------------------------------------------------------------------------

@@ -4,14 +4,14 @@
 %%% @doc
 %%% @end
 %%%=============================================================================
--module(lhttpc_protocol_tests).
+-module(fusco_protocol_tests).
 
 -include_lib("eunit/include/eunit.hrl").
--include("lhttpc.hrl").
+-include("fusco.hrl").
 
 -export([test_decode_header/0]).
 
-lhttpc_protocol_test_() ->
+fusco_protocol_test_() ->
     [{"HTTP version", ?_test(http_version())},
      {"Cookies", ?_test(cookies())},
      {"Decode header", ?_test(decode_header())}].
@@ -23,13 +23,13 @@ http_version() ->
 			   status_code = <<"200">>,
 			   reason = <<"OK">>,
 			   body = <<"Great success!">>},
-		 lhttpc_protocol:recv(Socket, false)),
+		 fusco_protocol:recv(Socket, false)),
     test_utils:stop_listener(L).
 
 cookies() ->
     L = {_, _, Socket} = test_utils:start_listener(cookie_message()),
     test_utils:send_message(Socket),
-    Recv = lhttpc_protocol:recv(Socket, false),
+    Recv = fusco_protocol:recv(Socket, false),
     test_utils:stop_listener(L),
     ?assertMatch(#response{version = {1,1},
 			   status_code = <<"200">>,
@@ -49,7 +49,7 @@ decode_header() ->
 		 test_decode_header()).
 
 test_decode_header() ->
-    lhttpc_protocol:decode_header(header(), <<>>, #response{}).
+    fusco_protocol:decode_header(header(), <<>>, #response{}).
 
 header() ->
     <<"Content-type: text/plain\r\nContent-length: 14\r\nSet-Cookie: name=value\r\nSet-Cookie: name2=value2; Expires=Wed, 09 Jun 2021 10:18:14 GMT\r\n\r\nGreat success!">>.

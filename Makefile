@@ -1,6 +1,6 @@
 .PHONY: all release compile test clean rel doc build-plt dialyzer
 
-PROJECT = lhttpc
+PROJECT = fusco
 
 REBAR := ./rebar
 DIALYZER = dialyzer

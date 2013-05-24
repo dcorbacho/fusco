@@ -25,10 +25,10 @@
 %%% ----------------------------------------------------------------------------
 
 %%% @author Oscar Hellström <oscar@hellstrom.st>
-%%% @doc This is the specification for the lhttpc application.
+%%% @doc This is the specification for the fusco application.
 %%% @end
-{application, lhttpc,
-    [{description, "Lightweight HTTP Client"},
+{application, fusco,
+    [{description, "Fast and Ultra Slim Connection Oriented HTTP Client"},
         {vsn, "1.2.6"},
         {modules, []},
         {registered, []},
