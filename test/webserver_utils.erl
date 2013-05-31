@@ -3,77 +3,9 @@
 -compile(export_all).
 
 -define(DEFAULT_STRING, "Great success!").
--define(LONG_BODY_PART,
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-        "This is a relatively long body, that we send to the client... "
-    ).
 
 default_string() ->
     ?DEFAULT_STRING.
-
-long_body_part() ->
-    ?LONG_BODY_PART.
-
-long_body_part(Size) ->
-    list_to_binary(
-      lists:foldl(
-    fun(_, Acc) ->
-        Acc ++ " " ++ webserver_utils:long_body_part()
-    end, webserver_utils:long_body_part(), lists:seq(1, Size))).
 
 %%% Responders
 simple_response(Module, Socket, _Request, _Headers, Body) ->
@@ -85,35 +17,6 @@ simple_response(Module, Socket, _Request, _Headers, Body) ->
             "X-Test-Orig-Body: ", Body, "\r\n\r\n"
             ?DEFAULT_STRING
         ]
-    ).
-
-large_response(Module, Socket, _, _, _) ->
-    BodyPart = <<?LONG_BODY_PART>>,
-    ContentLength = 3 * size(BodyPart),
-    Module:send(
-        Socket,
-        [
-            "HTTP/1.1 200 OK\r\n"
-            "Content-type: text/plain\r\n"
-            "Content-length: ", integer_to_list(ContentLength), "\r\n\r\n"
-        ]
-    ),
-    Module:send(Socket, BodyPart),
-    Module:send(Socket, BodyPart),
-    Module:send(Socket, BodyPart).
-
-head_response(Module, Socket, _Request, _Headers, _Body) ->
-    Module:send(
-        Socket,
-        "HTTP/1.1 200 OK\r\n"
-        "Server: Test server!\r\n\r\n"
-    ).
-
-no_content_response(Module, Socket, _Request, _Headers, _Body) ->
-    Module:send(
-        Socket,
-        "HTTP/1.1 204 OK\r\n"
-        "Server: Test server!\r\n\r\n"
     ).
 
 empty_body(Module, Socket, _, _, _) ->
@@ -229,15 +132,6 @@ close_connection(Module, Socket, _, _, _) ->
         "Content-type: text/plain\r\nContent-length: 14\r\n\r\n"
     ),
     Module:close(Socket).
-
-not_modified_response(Module, Socket, _Request, _Headers, _Body) ->
-    Module:send(
-        Socket,
-        [
-            "HTTP/1.1 304 Not Modified\r\n"
-            "Date: Tue, 15 Nov 1994 08:12:31 GMT\r\n\r\n"
-        ]
-    ).
 
 basic_auth_responder(User, Passwd) ->
     fun(Module, Socket, _Request, Headers, _Body) ->

@@ -49,26 +49,18 @@ stop_app(_) ->
 tcp_test_() ->
     {inorder,
         {setup, fun start_app/0, fun stop_app/1, [
-                ?_test(empty_get()),
                 ?_test(connection_refused()),
                 ?_test(basic_auth()),
                 ?_test(missing_basic_auth()),
                 ?_test(wrong_basic_auth()),
-                ?_test(get_with_mandatory_hdrs()),
                 ?_test(get_with_connect_options()),
                 ?_test(no_content_length()),
                 ?_test(no_content_length_1_0()),
-                ?_test(get_not_modified()),
-                ?_test(simple_head()),
-                ?_test(delete_no_content()),
-                ?_test(delete_content()),
                 ?_test(options_content()),
-                ?_test(options_no_content()),
                 ?_test(server_connection_close()),
                 ?_test(client_connection_close()),
                 ?_test(pre_1_1_server_connection()),
                 ?_test(pre_1_1_server_keep_alive()),
-                ?_test(post()),
                 ?_test(post_100_continue()),
                 ?_test(persistent_connection()),
                 ?_test(request_timeout()),
@@ -91,15 +83,6 @@ options_test() ->
 
 cookies_test() ->
     cookies().
-
-%%% Tests
-empty_get() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/empty", "GET", [], [], 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(<<>>, body(Response)).
 
 connection_refused() ->
     Response = fusco:connect("http://127.0.0.1:50234/none", []),
@@ -141,19 +124,6 @@ wrong_basic_auth() ->
     ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
     ?assertEqual(<<"wrong_auth">>, body(Response)).
 
-get_with_mandatory_hdrs() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
-    URL = url(Port),
-    Body = list_to_binary(webserver_utils:default_string()),
-    Hdrs = [
-	    {<<"content-length">>, integer_to_list(size(Body))},
-	    {<<"host">>, "localhost"}
-	   ],
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/host", "POST", Hdrs, Body, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
-
 get_with_connect_options() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port),
@@ -191,45 +161,6 @@ trailing_space_header() ->
     ContentLength = fusco_lib:header_value(<<"content-length">>, Headers),
     ?assertEqual(<<"14">>, ContentLength).
 
-get_not_modified() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:not_modified_response/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/not_modified", "GET", [], [], 1000),
-    ?assertEqual({<<"304">>, <<"Not Modified">>}, status(Response)),
-    ?assertEqual(<<>>, body(Response)).
-
-simple_head() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:head_response/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/HEAD", "HEAD", [], [], 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(<<>>, body(Response)).
-
-delete_no_content() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_response/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/delete_no_content", "DELETE", [], [], 1000),
-    ?assertEqual({<<"204">>, <<"OK">>}, status(Response)),
-    ?assertEqual(<<>>, body(Response)).
-
-delete_content() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/delete_content", "DELETE", [], [], 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
-
-options_no_content() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:head_response/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/options_no_content", "OPTIONS", [], [], 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(<<>>, body(Response)).
 
 options_content() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
@@ -289,23 +220,6 @@ pre_1_1_server_keep_alive() ->
     % The socket should be closed by us since the server responded with a
     % 1.0 version, and not the Connection: keep-alive header.
     receive closed -> ok end.
-
-post() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:copy_body/5]),
-    URL = url(Port),
-    {X, Y, Z} = now(),
-    Body = [
-        "This is a rather simple post :)",
-        integer_to_list(X),
-        integer_to_list(Y),
-        integer_to_list(Z)
-    ],
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/post", "POST", [], Body, 1000),
-    {StatusCode, ReasonPhrase} = status(Response),
-    ?assertEqual(<<"200">>, StatusCode),
-    ?assertEqual(<<"OK">>, ReasonPhrase),
-    ?assertEqual(iolist_to_binary(Body), body(Response)).
 
 post_100_continue() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:copy_body_100_continue/5]),
