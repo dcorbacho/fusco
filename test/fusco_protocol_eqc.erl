@@ -9,7 +9,8 @@
 -include_lib("eqc/include/eqc.hrl").
 -include("fusco.hrl").
 
--export([prop_http_response/0]).
+-export([prop_http_response_close_connection/0,
+	 prop_http_response_keep_alive/0]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -25,14 +26,23 @@ valid_http_message() ->
 %%==============================================================================
 %% Quickcheck properties
 %%==============================================================================
-prop_http_response() ->
+prop_http_response_close_connection() ->
+    %% Connection is closed just after send the response
+    prop_http_response(close).
+
+prop_http_response_keep_alive() ->
+    %% Connection stays open after send the response
+    prop_http_response(keepalive).
+
+prop_http_response(ConnectionState) ->
     eqc:numtests(
       500,
       ?FORALL({StatusLine, Headers, Cookies, Body},
 	      valid_http_message(),
 	      begin
 		  Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
-		  L = {_, _, Socket} = test_utils:start_listener({fragmented, Msg}),
+		  L = {_, _, Socket} =
+		      test_utils:start_listener({fragmented, Msg}, ConnectionState),
 		  test_utils:send_message(Socket),
 		  Recv = fusco_protocol:recv(Socket, false),
 		  test_utils:stop_listener(L),

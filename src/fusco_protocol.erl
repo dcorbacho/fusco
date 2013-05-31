@@ -12,6 +12,7 @@
 -define(SIZE(Data, Response), Response#response{size = Response#response.size + byte_size(Data)}).
 -define(RECEPTION(Data, Response), Response#response{size = byte_size(Data),
 						     in_timestamp = os:timestamp()}).
+-define(TOUT, 1000).
 %% Latency is here defined as the time from the start of packet transmission to the start of packet reception
 
 %% API
@@ -73,9 +74,9 @@ decode_reason_phrase(<<$\r>>, Acc, Response) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
-decode_reason_phrase(<<"\n", Rest/bits>>, Acc, Response) ->
+decode_reason_phrase(<<$\n, Rest/bits>>, Acc, Response) ->
     decode_header(Rest, <<>>, Response#response{reason = Acc});
-decode_reason_phrase(<<"\r\n", Rest/bits>>, Acc, Response) ->
+decode_reason_phrase(<<$\r,$\n, Rest/bits>>, Acc, Response) ->
     decode_header(Rest, <<>>, Response#response{reason = Acc});
 decode_reason_phrase(<<C, Rest/bits>>, Acc, Response) ->
     decode_reason_phrase(Rest, <<Acc/binary, C>>, Response).

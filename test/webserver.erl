@@ -57,7 +57,7 @@ accept_connection(Parent, Module, ListenSocket, Responders) ->
 
 server_loop(Module, Socket, _, _, []) ->
     Module:close(Socket);
-server_loop(Module, Socket, Request, Headers, Responders) ->
+server_loop(Module, Socket, Request, Headers, [H | T] = Responders) ->
     receive
 	stop ->
 	    Module:close(Socket)
@@ -84,9 +84,8 @@ server_loop(Module, Socket, Request, Headers, Responders) ->
 					  setopts(Module, Socket, [{packet, http}]),
 					  Body
 				  end,
-		    Responder = hd(Responders),
-		    Responder(Module, Socket, Request, Headers, RequestBody),
-		    server_loop(Module, Socket, none, [], tl(Responders));
+		    H(Module, Socket, Request, Headers, RequestBody),
+		    server_loop(Module, Socket, none, [], T);
 		{error, closed} ->
 		    Module:close(Socket)
 	    end

@@ -7,16 +7,26 @@
 -module(test_utils).
 
 -export([start_listener/1,
+	 start_listener/2,
 	 send_message/1,
 	 stop_listener/1]).
 
-start_listener({fragmented, Msg}) ->
-    random:seed(erlang:now()),
-    start_listener(Msg, fun fragmented_user_response/1);
 start_listener(Msg) ->
-    start_listener(Msg, fun user_response/1).
+    start_listener(Msg, close).
 
-start_listener(Msg, Fun) ->
+start_listener({fragmented, Msg}, ConnectionState) ->
+    random:seed(erlang:now()),
+    start_listener(Msg, fun fragmented_user_response/1, ConnectionState);
+start_listener(Msg, ConnectionState) ->
+    start_listener(Msg, fun user_response/1, ConnectionState).
+
+start_listener(Msg, Fun, ConnectionState) ->
+    Responders = case ConnectionState of
+		     close ->
+			 [Fun(Msg)];
+		     keepalive ->
+			 [Fun(Msg), user_response(message())]
+		 end,
     {ok, Listener, LS, Port} = webserver:start(gen_tcp, [Fun(Msg)]),
     {ok, Socket} = gen_tcp:connect("127.0.0.1", Port, [binary, {packet, raw},
 						       {nodelay, true},

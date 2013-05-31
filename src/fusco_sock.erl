@@ -35,6 +35,7 @@
 
 -export([connect/5,
          recv/2,
+	 recv/3,
 	 send/3,
          close/2]).
 
@@ -85,6 +86,13 @@ recv(Socket, true) ->
     ssl:recv(Socket, 0);
 recv(Socket, false) ->
     prim_inet:recv(Socket, 0).
+
+-spec recv(socket(), boolean(), timeout()) ->
+    {ok, any()} | {error, atom()} | {error, {http_error, string()}}.
+recv(Socket, true, Timeout) ->
+    ssl:recv(Socket, 0, Timeout);
+recv(Socket, false, Timeout) ->
+    prim_inet:recv(Socket, 0, Timeout).
 
 %%------------------------------------------------------------------------------
 %% @spec (Socket, Data, SslFlag) -> ok | {error, Reason}
