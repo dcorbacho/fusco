@@ -56,21 +56,11 @@ tcp_test_() ->
                 ?_test(get_with_connect_options()),
                 ?_test(no_content_length()),
                 ?_test(no_content_length_1_0()),
-                ?_test(options_content()),
                 ?_test(pre_1_1_server_connection()),
                 ?_test(pre_1_1_server_keep_alive()),
                 ?_test(post_100_continue()),
                 ?_test(request_timeout()),
                 ?_test(trailing_space_header())
-            ]}
-    }.
-
-ssl_test_() ->
-    {inorder,
-        {setup, fun start_app/0, fun stop_app/1, [
-                ?_test(ssl_get()),
-                ?_test(ssl_get_ipv6()),
-                ?_test(ssl_post())
             ]}
     }.
 
@@ -157,15 +147,6 @@ trailing_space_header() ->
     ContentLength = fusco_lib:header_value(<<"content-length">>, Headers),
     ?assertEqual(<<"14">>, ContentLength).
 
-
-options_content() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:simple_response/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/options_content", "OPTIONS", [], [], 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
-
 pre_1_1_server_connection() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:pre_1_1_server/5]),
     URL = url(Port),
@@ -220,32 +201,6 @@ request_timeout() ->
     {ok, Client} = fusco:connect(URL, []),
     ?assertEqual({error, timeout}, fusco:request(Client, "/slow", "GET", [], [], 50)).
 
-ssl_get() ->
-    {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5]),
-    URL = ssl_url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
-
-ssl_get_ipv6() ->
-    {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5], inet6),
-    URL = ssl_url(inet6, Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/simple", "GET", [], [], 1, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
-
-ssl_post() ->
-    {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:copy_body/5]),
-    URL = ssl_url(Port),
-    Body = "SSL Test <o/",
-    BinaryBody = list_to_binary(Body),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/simple", "POST", [], Body, 1, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(BinaryBody, body(Response)).
-
 invalid_options() ->
     URL = url(5050),
     ?assertError({bad_option, bad_option},
@@ -273,12 +228,6 @@ url(inet, Port) ->
     "http://localhost:" ++ integer_to_list(Port);
 url(inet6, Port) ->
     "http://[::1]:" ++ integer_to_list(Port).
-
-ssl_url(Port) ->
-    "https://localhost:" ++ integer_to_list(Port).
-
-ssl_url(inet6, Port) ->
-    "https://[::1]:" ++ integer_to_list(Port).
 
 status({Status, _, _, _, _}) ->
     Status.
