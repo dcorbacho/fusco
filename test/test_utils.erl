@@ -27,7 +27,7 @@ start_listener(Msg, Fun, ConnectionState) ->
 		     keepalive ->
 			 [Fun(Msg), user_response(message())]
 		 end,
-    {ok, Listener, LS, Port} = webserver:start(gen_tcp, [Fun(Msg)]),
+    {ok, Listener, LS, Port} = webserver:start(gen_tcp, Responders),
     {ok, Socket} = gen_tcp:connect("127.0.0.1", Port, [binary, {packet, raw},
 						       {nodelay, true},
 						       {reuseaddr, true},

@@ -31,7 +31,7 @@
 -module(webserver).
 
 -export([start/2, start/3, stop/2]).
--export([accept_connection/4]).
+-export([acceptor/3]).
 
 start(Module, Responders) ->
     start(Module, Responders, inet).
@@ -40,20 +40,26 @@ start(Module, Responders, Family) ->
     case get_addr("localhost", Family) of
         {ok, Addr} ->
             LS = listen(Module, Addr, Family),
-            Pid = spawn_link(?MODULE, accept_connection, [self(), Module, LS, Responders]),
+            Pid = spawn(?MODULE, acceptor, [Module, LS, Responders]),
             {ok, Pid, LS, port(Module, LS)};
         Error ->
             Error
     end.
 
 stop(Listener, LS) ->
-    Listener ! stop,
+    (catch exit(kill, Listener)),
     gen_tcp:close(LS).
 
-accept_connection(Parent, Module, ListenSocket, Responders) ->
-    Socket = accept(Module, ListenSocket),
-    server_loop(Module, Socket, nil, [], Responders),
-    unlink(Parent).
+acceptor(Module, ListenSocket, Responders) ->
+    case accept(Module, ListenSocket) of
+	error ->
+	    ok;
+	Socket ->
+	    spawn_link(fun() ->
+			       acceptor(Module, ListenSocket, Responders)
+		       end),
+	    server_loop(Module, Socket, nil, [], Responders)
+    end.
 
 server_loop(Module, Socket, _, _, []) ->
     Module:close(Socket);
@@ -62,7 +68,7 @@ server_loop(Module, Socket, Request, Headers, [H | T] = Responders) ->
 	stop ->
 	    Module:close(Socket)
     after 0 ->
-	    case Module:recv(Socket, 0) of
+	    case Module:recv(Socket, 0, 500) of
 		{ok, {http_request, _, _, _} = NewRequest} ->
 		    server_loop(Module, Socket, NewRequest, Headers, Responders);
 		{ok, {http_header, _, Field, _, Value}} when is_atom(Field) ->
@@ -85,7 +91,14 @@ server_loop(Module, Socket, Request, Headers, [H | T] = Responders) ->
 					  Body
 				  end,
 		    H(Module, Socket, Request, Headers, RequestBody),
-		    server_loop(Module, Socket, none, [], T);
+		    case proplists:get_value("Connection", Headers) of
+			"close" ->
+			    Module:close(Socket);
+			_ ->
+			    server_loop(Module, Socket, none, [], T)
+		    end;
+		{error, timeout} ->
+		    server_loop(Module, Socket, Request, Headers, Responders);
 		{error, closed} ->
 		    Module:close(Socket)
 	    end
@@ -123,12 +136,20 @@ get_addr(Host, Family) ->
     end.
 
 accept(ssl, ListenSocket) ->
-    {ok, Socket} = ssl:transport_accept(ListenSocket, 10000),
-    ok = ssl:ssl_accept(Socket),
-    Socket;
+    case ssl:transport_accept(ListenSocket, 10000) of
+	{ok, Socket} ->
+	    ok = ssl:ssl_accept(Socket),
+	    Socket;
+	{error, _} ->
+	    error
+    end;
 accept(Module, ListenSocket) ->
-    {ok, Socket} = Module:accept(ListenSocket, 1000),
-    Socket.
+    case Module:accept(ListenSocket, 1000) of
+	{ok, Socket} ->
+	    Socket;
+	{error, _} ->
+	    error
+    end.
 
 setopts(ssl, Socket, Options) ->
     ssl:setopts(Socket, Options);

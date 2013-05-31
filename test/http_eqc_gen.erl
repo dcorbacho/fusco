@@ -13,7 +13,7 @@
 %% RFC 2616
 general_header() ->
     [{<<"Cache-Control">>, small_valid_bin()},
-     {<<"Connection">>, small_valid_bin()},
+     {<<"Connection">>, connection_header()},
      {<<"Date">>, small_valid_bin()},
      {<<"Pragma">>, small_valid_bin()},
      {<<"Trailer">>, small_valid_bin()},
@@ -21,6 +21,9 @@ general_header() ->
      {<<"Upgrade">>, small_valid_bin()},
      {<<"Via">>, small_valid_bin()},
      {<<"Warning">>, small_valid_bin()}].
+
+connection_header() ->
+    oneof([<<"close">>, <<"keep-alive">>, small_valid_bin()]).
 
 %% RFC 2616
 entity_header() ->
