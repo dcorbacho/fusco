@@ -62,9 +62,7 @@ tcp_test_() ->
                 ?_test(pre_1_1_server_connection()),
                 ?_test(pre_1_1_server_keep_alive()),
                 ?_test(post_100_continue()),
-                ?_test(persistent_connection()),
                 ?_test(request_timeout()),
-                ?_test(close_connection()),
                 ?_test(trailing_space_header())
             ]}
     }.
@@ -238,38 +236,11 @@ post_100_continue() ->
     ?assertEqual(<<"OK">>, ReasonPhrase),
     ?assertEqual(iolist_to_binary(Body), body(Response)).
 
-persistent_connection() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp,
-				   [
-				    fun webserver_utils:simple_response/5,
-				    fun webserver_utils:simple_response/5,
-				    fun webserver_utils:copy_body/5
-				   ]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, FirstResponse} = fusco:request(Client, "/persistent", "GET", [], [], 1, 1000),
-    Headers = [{"KeepAlive", "300"}], % shouldn't be needed
-    {ok, SecondResponse} = fusco:request(Client, "/persistent", "GET", Headers, [], 1, 1000),
-    {ok, ThirdResponse} = fusco:request(Client, "/persistent", "POST", [], [], 1, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(FirstResponse)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(FirstResponse)),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(SecondResponse)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(SecondResponse)),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(ThirdResponse)),
-    ?assertEqual(<<>>, body(ThirdResponse)).
-
 request_timeout() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:very_slow_response/5]),
     URL = url(Port),
     {ok, Client} = fusco:connect(URL, []),
     ?assertEqual({error, timeout}, fusco:request(Client, "/slow", "GET", [], [], 50)).
-
-close_connection() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:close_connection/5]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/close", "GET", [], [], 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)).
 
 ssl_get() ->
     {ok, _, _, Port} = webserver:start(ssl, [fun webserver_utils:simple_response/5]),

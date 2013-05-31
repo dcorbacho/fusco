@@ -125,14 +125,6 @@ no_content_length_1_0(Module, Socket, _, _, _) ->
         ?DEFAULT_STRING
     ).
 
-close_connection(Module, Socket, _, _, _) ->
-    Module:send(
-        Socket,
-        "HTTP/1.1 200 OK\r\n"
-        "Content-type: text/plain\r\nContent-length: 14\r\n\r\n"
-    ),
-    Module:close(Socket).
-
 basic_auth_responder(User, Passwd) ->
     fun(Module, Socket, _Request, Headers, _Body) ->
         case proplists:get_value("Authorization", Headers) of
