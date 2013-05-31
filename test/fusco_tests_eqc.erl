@@ -19,8 +19,10 @@
 			     V/binary,"\r\n\r\n">>
 		   end).
 
--export([prop_http_request_ipv4/0, prop_http_request_ipv6/0]).
--export([prop_persistent_connection_ipv4/0, prop_persistent_connection_ipv6/0]).
+-export([prop_http_request_ipv4/0, prop_http_request_ipv6/0,
+	 prop_http_request_ipv4_ssl/0, prop_http_request_ipv6_ssl/0]).
+-export([prop_persistent_connection_ipv4/0, prop_persistent_connection_ipv6/0,
+	 prop_persistent_connection_ipv4_ssl/0, prop_persistent_connection_ipv6_ssl/0]).
 -export([prop_reconnect_ipv4/0, prop_reconnect_ipv6/0]).
 -export([prop_client_close_connection_ipv4/0, prop_client_close_connection_ipv6/0]).
 
@@ -38,24 +40,41 @@ valid_http_request() ->
 %% Quickcheck properties
 %%==============================================================================
 prop_http_request_ipv4() ->
-    prop_http_request_per_family("127.0.0.1", inet).
+    prop_http_request_per_family("127.0.0.1", inet, false).
 
 prop_http_request_ipv6() ->
-    prop_http_request_per_family("::1", inet6).
+    prop_http_request_per_family("::1", inet6, false).
 
-prop_http_request_per_family(Host, Family) ->
+prop_http_request_ipv4_ssl() ->
+    %% TODO Use CT for setup/cleanup
+    application:start(crypto),
+    application:start(public_key),
+    application:start(ssl),
+    application:start(fusco),
+    prop_http_request_per_family("127.0.0.1", inet, true).
+
+prop_http_request_ipv6_ssl() ->
+    %% TODO Use CT for setup/cleanup
+    application:start(crypto),
+    application:start(public_key),
+    application:start(ssl),
+    application:start(fusco),
+    prop_http_request_per_family("::1", inet6, true).
+
+prop_http_request_per_family(Host, Family, Ssl) ->
     eqc:numtests(
       500,
       ?FORALL({{Method, Uri, _Version}, Headers, Body} = Msg,
 	      valid_http_request(),
 	      begin
+		  Module = select_module(Ssl),
 		  {ok, Listener, LS, Port} =
-		      webserver:start(gen_tcp, [validate_msg(Msg)], Family),
-		  {ok, Client} = fusco:connect({Host, Port, false}, []),
+		      webserver:start(Module, [validate_msg(Msg)], Family),
+		  {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
 		  {ok, {Status, _, _, _, _}}
 		      = fusco:request(Client, Uri, Method, Headers, Body, 10000), 
 		  ok = fusco:disconnect(Client),
-		  webserver:stop(Listener, LS),
+		  webserver:stop(Module, Listener, LS),
 		  Expected = {<<"200">>, <<"OK">>},
 		  ?WHENFAIL(io:format("Status: ~p~nExpected: ~p~n",
 				      [Status, Expected]),
@@ -68,28 +87,35 @@ prop_http_request_per_family(Host, Family) ->
 	      end)).
 
 prop_persistent_connection_ipv4() ->
-    prop_persistent_connection_per_family("127.0.0.1", inet).
+    prop_persistent_connection_per_family("127.0.0.1", inet, false).
 
 prop_persistent_connection_ipv6() ->
-    prop_persistent_connection_per_family("::1", inet6).
+    prop_persistent_connection_per_family("::1", inet6, false).
 
-prop_persistent_connection_per_family(Host, Family) ->
+prop_persistent_connection_ipv4_ssl() ->
+    prop_persistent_connection_per_family("127.0.0.1", inet, true).
+
+prop_persistent_connection_ipv6_ssl() ->
+    prop_persistent_connection_per_family("::1", inet6, true).
+
+prop_persistent_connection_per_family(Host, Family, Ssl) ->
     %% Fusco must keep the connection alive and be able to reconnect
     %% Individual properties defined for reconnect and keep-alive
     ?FORALL(
        Msgs,
        non_empty(list({valid_http_request(), http_eqc_gen:connection_header()})),
        begin
+	   Module = select_module(Ssl),
 	   {ok, Listener, LS, Port} =
-	       webserver:start(gen_tcp,
+	       webserver:start(Module,
 			       [reply_msg(?TWO_OK(ConHeader)) || {_, ConHeader} <- Msgs],
 			       Family),
-	   {ok, Client} = fusco:connect({Host, Port, false}, []),
+	   {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
 	   Replies = lists:map(fun({{{Method, Uri, _Version}, Headers, Body}, _}) ->
 				       fusco:request(Client, Uri, Method, Headers, Body, 10000)
 			       end, Msgs),
 	   ok = fusco:disconnect(Client),
-	   webserver:stop(Listener, LS),
+	   webserver:stop(Module, Listener, LS),
 	   ?WHENFAIL(io:format("Replies: ~p~nExpected: 200 OK~n", [Replies]),
 		     lists:all(fun({ok, {{<<"200">>, <<"OK">>}, _, _, _, _}}) ->
 				       true;
@@ -280,4 +306,12 @@ must_close(Headers, Connection) ->
 		_ ->
 		    false
 	    end
+    end.
+
+select_module(Ssl) ->
+    case Ssl of
+	true ->
+	    ssl;
+	false ->
+	    gen_tcp
     end.

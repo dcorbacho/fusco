@@ -30,7 +30,7 @@
 %%% @end
 -module(webserver).
 
--export([start/2, start/3, stop/2]).
+-export([start/2, start/3, stop/2, stop/3]).
 -export([acceptor/3]).
 
 start(Module, Responders) ->
@@ -47,8 +47,11 @@ start(Module, Responders, Family) ->
     end.
 
 stop(Listener, LS) ->
+    stop(gen_tcp, Listener, LS).
+
+stop(Module, Listener, LS) ->
     (catch exit(kill, Listener)),
-    gen_tcp:close(LS).
+    Module:close(LS).
 
 acceptor(Module, ListenSocket, Responders) ->
     case accept(Module, ListenSocket) of
@@ -112,8 +115,8 @@ listen(ssl, Addr, Family) ->
         {active, false},
         {ip, Addr},
         {verify,0},
-        {keyfile, "../test/key.pem"},
-        {certfile, "../test/crt.pem"}
+        {keyfile, "test/key.pem"},
+        {certfile, "test/crt.pem"}
     ],
     {ok, LS} = ssl:listen(0, Opts),
     LS;

@@ -57,8 +57,6 @@ tcp_test_() ->
                 ?_test(no_content_length()),
                 ?_test(no_content_length_1_0()),
                 ?_test(options_content()),
-                ?_test(server_connection_close()),
-                ?_test(client_connection_close()),
                 ?_test(pre_1_1_server_connection()),
                 ?_test(pre_1_1_server_keep_alive()),
                 ?_test(post_100_continue()),
@@ -167,26 +165,6 @@ options_content() ->
     {ok, Response} = fusco:request(Client, "/options_content", "OPTIONS", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
-
-server_connection_close() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:respond_and_close/5]),
-    URL = url(Port),
-    Body = pid_to_list(self()),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/close", "PUT", [], Body, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)),
-    receive closed -> ok end.
-
-client_connection_close() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:respond_and_wait/5]),
-    URL = url(Port),
-    Body = pid_to_list(self()),
-    Hdrs = [{<<"Connection">>, <<"close">>}],
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, _} = fusco:request(Client, "/close", "PUT", Hdrs, Body, 1000),
-    % Wait for the server to see that socket has been closed
-    receive closed -> ok end.
 
 pre_1_1_server_connection() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:pre_1_1_server/5]),
