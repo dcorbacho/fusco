@@ -58,7 +58,5 @@ message() ->
     <<"GET /blabla HTTP/1.1\r\nhost: 127.0.0.1:5050\r\nuser-agent: Cow\r\nAccept: */*\r\n\r\n">>.
 
 stop_listener({Listener, LS, Socket}) ->
-    unlink(Listener),
-    (catch exit(Listener, kill)),
-    gen_tcp:close(LS),
+    webserver:stop(Listener, LS),
     gen_tcp:close(Socket).

@@ -102,56 +102,6 @@ large_response(Module, Socket, _, _, _) ->
     Module:send(Socket, BodyPart),
     Module:send(Socket, BodyPart).
 
-large_chunked_response(Module, Socket, _, _, _) ->
-    BodyPart = <<?LONG_BODY_PART>>,
-    ChunkSize = erlang:integer_to_list(size(BodyPart), 16),
-    Chunk = [ChunkSize, "\r\n", BodyPart, "\r\n"],
-    Module:send(
-        Socket,
-        [
-            "HTTP/1.1 200 OK\r\n"
-            "Content-type: text/plain\r\n"
-            "Transfer-Encoding: chunked\r\n\r\n"
-        ]
-    ),
-    Module:send(Socket, Chunk),
-    Module:send(Socket, Chunk),
-    Module:send(Socket, Chunk),
-    Module:send(Socket, "0\r\n\r\n").
-
-slow_chunked_response(Module, Socket, _, _, _) ->
-    ChunkSize = erlang:integer_to_list(length(?LONG_BODY_PART) * 2, 16),
-    Module:send(
-        Socket,
-        [
-            "HTTP/1.1 200 OK\r\n"
-            "Content-type: text/plain\r\n"
-            "Transfer-Encoding: chunked\r\n\r\n"
-        ]),
-    Module:send(Socket, [ChunkSize, "\r\n", <<?LONG_BODY_PART>>]),
-    timer:sleep(200),
-    Module:send(Socket, [<<?LONG_BODY_PART>>, "\r\n"]),
-    Module:send(Socket, "0\r\n\r\n").
-
-
-chunked_upload(Module, Socket, _, Headers, <<>>) ->
-    TransferEncoding = fusco_lib:header_value("transfer-encoding", Headers),
-    {Body, HeadersAndTrailers} =
-        webserver:read_chunked(Module, Socket, Headers),
-    Trailer1 = fusco_lib:header_value("x-trailer-1", HeadersAndTrailers,
-        "undefined"),
-    Module:send(
-        Socket,
-        [
-            "HTTP/1.1 200 OK\r\n"
-            "Content-Length: 14\r\n"
-            "X-Test-Orig-Trailer-1:", Trailer1, "\r\n"
-            "X-Test-Orig-Enc: ", TransferEncoding, "\r\n"
-            "X-Test-Orig-Body: ", Body, "\r\n\r\n"
-            ?DEFAULT_STRING
-        ]
-    ).
-
 head_response(Module, Socket, _Request, _Headers, _Body) ->
     Module:send(
         Socket,
@@ -270,36 +220,6 @@ no_content_length_1_0(Module, Socket, _, _, _) ->
         "HTTP/1.0 200 OK\r\n"
         "Content-type: text/plain\r\n\r\n"
         ?DEFAULT_STRING
-    ).
-
-chunked_response(Module, Socket, _, _, _) ->
-    Module:send(
-        Socket,
-        "HTTP/1.1 200 OK\r\n"
-        "Content-type: text/plain\r\nTransfer-Encoding: chunked\r\n\r\n"
-        "5\r\n"
-        "Great\r\n"
-        "1\r\n"
-        " \r\n"
-        "8\r\n"
-        "success!\r\n"
-        "0\r\n"
-        "\r\n"
-    ).
-
-chunked_response_t(Module, Socket, _, _, _) ->
-    Module:send(
-        Socket,
-        "HTTP/1.1 200 OK\r\n"
-        "Content-type: text/plain\r\nTransfer-Encoding: ChUnKeD\r\n\r\n"
-        "7\r\n"
-        "Again, \r\n"
-        "E\r\n"
-        "great success!\r\n"
-        "0\r\n"
-        "Trailer-1: 1\r\n"
-        "Trailer-2: 2\r\n"
-        "\r\n"
     ).
 
 close_connection(Module, Socket, _, _, _) ->

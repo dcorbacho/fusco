@@ -49,8 +49,6 @@ stop_app(_) ->
 tcp_test_() ->
     {inorder,
         {setup, fun start_app/0, fun stop_app/1, [
-                ?_test(simple_get()),
-                ?_test(simple_get_ipv6()),
                 ?_test(empty_get()),
                 ?_test(connection_refused()),
                 ?_test(basic_auth()),
@@ -70,7 +68,6 @@ tcp_test_() ->
                 ?_test(client_connection_close()),
                 ?_test(pre_1_1_server_connection()),
                 ?_test(pre_1_1_server_keep_alive()),
-                ?_test(simple_put()),
                 ?_test(post()),
                 ?_test(post_100_continue()),
                 ?_test(persistent_connection()),
@@ -96,13 +93,6 @@ cookies_test() ->
     cookies().
 
 %%% Tests
-
-simple_get() ->
-    simple("GET").
-
-simple_get_ipv6() ->
-    simple("GET", inet6).
-
 empty_get() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port),
@@ -300,9 +290,6 @@ pre_1_1_server_keep_alive() ->
     % 1.0 version, and not the Connection: keep-alive header.
     receive closed -> ok end.
 
-simple_put() ->
-    simple("PUT").
-
 post() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:copy_body/5]),
     URL = url(Port),
@@ -416,24 +403,6 @@ cookies() ->
     {ok, Response3} = fusco:request(Client, "/cookies", "GET", [], <<>>, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response3)).
 
-simple(Method) ->
-    simple(Method, inet).
-
-simple(Method, Family) ->
-    case webserver:start(gen_tcp, [fun webserver_utils:simple_response/5], Family) of
-        {error, family_not_supported} when Family =:= inet6 ->
-            % Localhost has no IPv6 support - not a big issue.
-            ?debugMsg("WARNING: impossible to test IPv6 support~n");
-        {ok, _, _, Port} when is_number(Port) ->
-            URL = url(Family, Port),
-	    {ok, Client} = fusco:connect(URL, []),
-            {ok, Response} = fusco:request(Client, "/simple", Method, [], [], 1000),
-            {StatusCode, ReasonPhrase} = status(Response),
-            ?assertEqual(<<"200">>, StatusCode),
-            ?assertEqual(<<"OK">>, ReasonPhrase),
-            ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response))
-    end.
-
 url(Port) ->
     url(inet, Port).
 
@@ -441,16 +410,6 @@ url(inet, Port) ->
     "http://localhost:" ++ integer_to_list(Port);
 url(inet6, Port) ->
     "http://[::1]:" ++ integer_to_list(Port).
-
-%% url(Port, Path, User, Password) ->
-%%     url(inet, Port, Path, User, Password).
-
-%% url(inet, Port, Path, User, Password) ->
-%%     "http://" ++ User ++ ":" ++ Password ++
-%%         "@localhost:" ++ integer_to_list(Port) ++ Path;
-%% url(inet6, Port, Path, User, Password) ->
-%%     "http://" ++ User ++ ":" ++ Password ++
-%%         "@[::1]:" ++ integer_to_list(Port) ++ Path.
 
 ssl_url(Port) ->
     "https://localhost:" ++ integer_to_list(Port).

@@ -46,8 +46,37 @@ response_header() ->
      {<<"Vary">>, small_valid_bin()},
      {<<"WWW-Authenticate">>, small_valid_bin()}].
 
+%% http://tools.ietf.org/html/rfc2616#section-5.3
+request_header() ->
+    [{<<"Accept">>, small_valid_bin()},
+     {<<"Accept-Charset">>, small_valid_bin()},
+     {<<"Accept-Encoding">>, small_valid_bin()},
+     {<<"Accept-Language">>, small_valid_bin()},
+     {<<"Authorization">>, small_valid_bin()},
+     {<<"Expect">>, small_valid_bin()},
+     {<<"From">>, small_valid_bin()},
+     {<<"Host">>, small_valid_bin()},
+     {<<"If-Match">>, small_valid_bin()},
+     {<<"If-Modified-Since">>, small_valid_bin()},
+     {<<"If-None-Match">>, small_valid_bin()},
+     {<<"If-Range">>, small_valid_bin()},
+     {<<"If-Unmodified-Since">>, small_valid_bin()},
+     {<<"Max-Forwards">>, small_valid_bin()},
+     {<<"Proxy-Authorization">>, small_valid_bin()},
+     {<<"Range">>, small_valid_bin()},
+     {<<"Referer">>, small_valid_bin()},
+     {<<"TE">>, small_valid_bin()},
+     {<<"User-Agent">>, small_valid_bin()}
+    ].
+
 header() ->
     lists:append([general_header(), entity_header(), response_header()]).
+
+req_headers() ->
+    lists:append([general_header(), entity_header(), request_header()]).
+
+request_headers() ->
+    ?LET(Headers, list(oneof(req_headers())), Headers).
 
 headers() ->
     ?LET(Headers, list(oneof(header())), Headers).
@@ -190,6 +219,17 @@ status_line() ->
     ?LET({HttpVersion, {StatusCode, Reason}},
 	 {oneof(http_version()), oneof(status_code())},
 	 {HttpVersion, StatusCode, Reason}).
+
+http_method() ->
+    ["OPTIONS", "GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "CONNECT"].
+
+request_uri() ->
+    ["*", "http://www.w3.org/pub/WWW/TheProject.html", "/pub/WWW/TheProject.html"].
+
+request_line() ->
+    ?LET({Method, RequestUri},
+	 {oneof(http_method()), oneof(request_uri())},
+	 {Method, RequestUri, "HTTP/1.1"}).
 
 small_valid_bin() ->
     ?LET(String, vector(5, choose($A, $z)),

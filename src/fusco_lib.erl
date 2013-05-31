@@ -123,7 +123,7 @@ parse_url(URL) ->
                      {boolean(), [#fusco_cookie{}]}) -> {boolean(), iolist()}.
 format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
     {AllHdrs, ConHdr} =
-	add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, Cookies),
+	add_mandatory_hdrs(Path, Hdrs, Host, Body, Cookies),
     {[Method, <<" ">>, Path, <<" HTTP/1.1">>, ?HTTP_LINE_END, AllHdrs,
       ?HTTP_LINE_END, Body], ConHdr}.
 
@@ -359,15 +359,15 @@ split_port(Scheme, [P | T], Port) ->
 %% @doc
 %% @end
 %%------------------------------------------------------------------------------
--spec add_mandatory_hdrs(string(), method(), headers(), host(),
+-spec add_mandatory_hdrs(string(), headers(), host(),
                          iolist(), {boolean(), [#fusco_cookie{}]}) -> headers().
-add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {_, []}) ->
-    add_headers(Hdrs, Method, Body, Host, undefined, []);
-add_mandatory_hdrs(_Path, Method, Hdrs, Host, Body, {false, _}) ->
-    add_headers(Hdrs, Method, Body, Host, undefined, []);
-add_mandatory_hdrs(Path, Method, Hdrs, Host, Body, {true, Cookies}) ->
+add_mandatory_hdrs(_Path, Hdrs, Host, Body, {_, []}) ->
+    add_headers(Hdrs, Body, Host, undefined, []);
+add_mandatory_hdrs(_Path, Hdrs, Host, Body, {false, _}) ->
+    add_headers(Hdrs, Body, Host, undefined, []);
+add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
     Result = {ContentHdrs, ConHdr} =
-	add_headers(Hdrs, Method, Body, Host, undefined, []),
+	add_headers(Hdrs, Body, Host, undefined, []),
 
     %% only include cookies if the cookie path is a prefix of the request path
     %% see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
@@ -414,43 +414,50 @@ cookie_string(#fusco_cookie{name = Name, value = Value}) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% Host header: http://tools.ietf.org/html/rfc2616#section-14.23
 %%------------------------------------------------------------------------------
-add_headers([], Method, Body, Host, Connection, Headers) when Method == "POST";
-							      Method == "PUT" ->
-    ContentLength = integer_to_list(iolist_size(Body)),
-    case Host of
-	undefined ->
-	    {[[<<"Content-Length: ">>, ContentLength, ?HTTP_LINE_END]
-	      | Headers], Connection};
+add_headers([{H, V} | T], undefined, undefined, Connection, Acc)
+  when Connection =/= undefined ->
+    add_headers(T, undefined, undefined, Connection,
+		[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+add_headers([{H, V} | T], Body, Host, Connection, Acc) ->
+    case to_lower(H) of
+	<<"connection">> ->
+	    add_headers(T, Body, Host, V,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+	<<"host">> ->
+	    add_headers(T, Body, undefined, Connection,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+	<<"content-length">> ->
+	    add_headers(T, undefined, Host, Connection,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
 	_ ->
-	    {[[<<"Content-Length: ">>, ContentLength, ?HTTP_LINE_END],
-	      [<<"Host: ">>, Host, ?HTTP_LINE_END] | Headers], Connection}
+	    add_headers(T, Body, Host, Connection,
+			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc])
     end;
-add_headers([], _Method, _Body, Host, Connection, Headers) ->
+add_headers([], undefined, Host, Connection, Headers) ->
     case Host of
 	undefined ->
 	    {Headers, Connection};
 	_ ->
 	    {[[<<"Host: ">>, Host, ?HTTP_LINE_END] | Headers], Connection}
     end;
-add_headers([{H, V} | T], undefined, undefined, undefined, Connection, Acc)
-  when Connection =/= undefined ->
-    add_headers(T, undefined, undefined, undefined, Connection,
-		[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
-add_headers([{H, V} | T], Method, Body, Host, Connection, Acc) ->
-    case to_lower(H) of
-	<<"connection">> ->
-	    add_headers(T, Method, Body, Host, V,
-			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
-	<<"host">> ->
-	    add_headers(T, Method, Body, undefined, Connection,
-			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
-	<<"content-length">> ->
-	    add_headers(T, undefined, undefined, Host, Connection,
-			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
+add_headers([], Body, Host, Connection, Headers) ->
+    ContentLength = integer_to_list(iolist_size(Body)),
+    case ContentLength > 0 of
+	true ->
+	    add_headers([], undefined, Host, Connection, 
+			[[<<"Content-Length: ">>, ContentLength, ?HTTP_LINE_END]
+			 | Headers]);
 	_ ->
-	    add_headers(T, Method, Body, Host, Connection,
-			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc])
+	    add_headers([], undefined, Host, Connection, Headers)
+    end;
+add_headers([], _Body, Host, Connection, Headers) ->
+    case Host of
+	undefined ->
+	    {Headers, Connection};
+	_ ->
+	    {[[<<"Host: ">>, Host, ?HTTP_LINE_END] | Headers], Connection}
     end.
 
 %%------------------------------------------------------------------------------

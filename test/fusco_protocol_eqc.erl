@@ -18,23 +18,9 @@ valid_http_message() ->
     ?LET({StatusLine, Headers, Cookies},
 	 {http_eqc_gen:status_line(), http_eqc_gen:headers(),
 	  list(http_eqc_gen:set_cookie())},
-	 ?LET(Body, body(StatusLine),
-	      {StatusLine, add_content_length(Headers, Body), Cookies, Body})).
-
-add_content_length(Headers, <<>>) ->
-    Headers;
-add_content_length(Headers, Body) ->
-    ContentLength = list_to_binary(integer_to_list(byte_size(Body))),
-    [{<<"Content-Length">>, ContentLength} | Headers].
-
-body({_, <<$1, _, _>>, _}) ->
-    <<>>;
-body({_, <<$2,$0,$4>>, _}) ->
-    <<>>;
-body({_, <<$3,$0,$4>>, _}) ->
-    <<>>;
-body(_) ->
-    http_eqc_gen:body().
+	 ?LET(Body, http_eqc_encoding:body(StatusLine),
+	      {StatusLine, http_eqc_encoding:add_content_length(Headers, Body),
+	       Cookies, Body})).
 
 %%==============================================================================
 %% Quickcheck properties
