@@ -384,7 +384,7 @@ decode_cookie_av_value(<<>>, Co, <<"path">>, Value) ->
     Co#fusco_cookie{path = Value};
 decode_cookie_av_value(<<>>, Co, <<"max-age">>, Value) ->
     Co#fusco_cookie{max_age = max_age(Value),
-		     timestamp = calendar:universal_time()};
+		     timestamp = os:timestamp()};
 decode_cookie_av_value(<<>>, Co, <<"expires">>, Value) ->
     Co#fusco_cookie{expires = expires(Value)};
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"path">>, Value) ->
@@ -392,7 +392,7 @@ decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"path">>, Value) ->
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"max-age">>, Value) ->
     decode_cookie_av_ws(Rest, Co#fusco_cookie{
 				max_age = max_age(Value),
-				timestamp = calendar:universal_time()});
+				timestamp = os:timestamp()});
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"expires">>, Value) ->
     %% TODO parse expires
     decode_cookie_av_ws(Rest, Co#fusco_cookie{expires = expires(Value)});

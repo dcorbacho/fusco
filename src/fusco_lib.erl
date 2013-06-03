@@ -103,7 +103,7 @@ parse_url(URL) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec format_request(iolist(), method(), headers(), string(),  iolist(),
-                     {boolean(), [#fusco_cookie{}]}) -> {boolean(), iolist()}.
+                     {boolean(), [#fusco_cookie{}]}) -> {iodata(), iodata()}.
 format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
     {AllHdrs, ConHdr} =
 	add_mandatory_hdrs(Path, Hdrs, Host, Body, Cookies),
@@ -142,8 +142,9 @@ update_cookies(ReceivedCookies, StateCookies) ->
 %%------------------------------------------------------------------------------
 -spec to_lower(string()) -> string().
 to_lower(String) when is_list(String) ->
-    [char_to_lower(X) || X <- String];
-to_lower(Bin) ->
+    [char_to_lower(X) || X <- String].
+
+bin_to_lower(Bin) ->
     << <<(char_to_lower(B))>> || <<B>> <= Bin >>.
 
 %%------------------------------------------------------------------------------
@@ -333,7 +334,7 @@ split_port(Scheme, [P | T], Port) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec add_mandatory_hdrs(string(), headers(), host(),
-                         iolist(), {boolean(), [#fusco_cookie{}]}) -> headers().
+                         iolist(), {boolean(), [#fusco_cookie{}]}) -> {iodata(), iodata()}.
 add_mandatory_hdrs(_Path, Hdrs, Host, Body, {_, []}) ->
     add_headers(Hdrs, Body, Host, undefined, []);
 add_mandatory_hdrs(_Path, Hdrs, Host, Body, {false, _}) ->
@@ -349,8 +350,9 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 	   fun(#fusco_cookie{path = undefined}) ->
 		   true;
 	      (X) ->
-		   IsPrefix = string:str(Path, X#fusco_cookie.path),
-		   if (IsPrefix =/= 1) ->
+		   IsPrefix = binary:match(X#fusco_cookie.path, Path,
+					   [{scope, {0, byte_size(Path)}}]),
+		   if (IsPrefix == nomatch) ->
 			   false;
 		      true ->
 			   true
@@ -394,7 +396,7 @@ add_headers([{H, V} | T], undefined, undefined, Connection, Acc)
     add_headers(T, undefined, undefined, Connection,
 		[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);
 add_headers([{H, V} | T], Body, Host, Connection, Acc) ->
-    case to_lower(H) of
+    case bin_to_lower(H) of
 	<<"connection">> ->
 	    add_headers(T, Body, Host, V,
 			[[H, <<": ">>, V, ?HTTP_LINE_END] | Acc]);

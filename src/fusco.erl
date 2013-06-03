@@ -198,6 +198,7 @@ request(Client, Path, Method, Hdrs, Body, Timeout) ->
 %% list of all available options, please check OTP's ssl module manpage.
 %% @end
 %%------------------------------------------------------------------------------
+-spec request(pid(), string(), method(), headers(), iodata(), integer(), pos_timeout()) -> result().
 request(Client, Path, Method, Hdrs, Body, SendRetry, Timeout) ->
     try
 	gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry}, Timeout)
@@ -568,14 +569,14 @@ new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOpt
 
 ensure_proxy_tunnel({error, _} = Error, _State) ->
     Error;
-ensure_proxy_tunnel(Socket, #client_state{proxy = #fusco_url{user = User,
+ensure_proxy_tunnel({ok, Socket}, #client_state{proxy = #fusco_url{user = User,
 							     password = Passwd,
 							     is_ssl = Ssl},
 					  host = DestHost, port = Port} = State) ->
     %% Proxy tunnel connection http://tools.ietf.org/html/rfc2817#section-5.2
     %% Draft http://www.web-cache.com/Writings/Internet-Drafts/draft-luotonen-web-proxy-tunneling-01.txt
     %% IPv6 address literals are enclosed by square brackets (RFC2732)
-    Host = [fusco_lib:maybe_ipv6_enclode(DestHost), $:, integer_to_list(Port)],
+    Host = [fusco_lib:maybe_ipv6_enclose(DestHost), $:, integer_to_list(Port)],
     ConnectRequest = [
 		      <<"CONNECT ">>, Host, <<" HTTP/1.1">>, ?HTTP_LINE_END,
 		      <<"Host: ">>, Host, ?HTTP_LINE_END,
