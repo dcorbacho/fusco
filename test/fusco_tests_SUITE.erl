@@ -5,6 +5,8 @@
 %%% @end
 %%%=============================================================================
 -module(fusco_tests_SUITE).
+-copyright("2013, Erlang Solutions Ltd.").
+
 -compile(export_all).
 
 all() ->

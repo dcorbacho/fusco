@@ -5,6 +5,7 @@
 %%% @end
 %%%=============================================================================
 -module(fusco_protocol_tests).
+-copyright("2013, Erlang Solutions Ltd.").
 
 -include_lib("eunit/include/eunit.hrl").
 -include("fusco.hrl").

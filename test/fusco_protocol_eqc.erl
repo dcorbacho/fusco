@@ -5,6 +5,7 @@
 %%% @end
 %%%=============================================================================
 -module(fusco_protocol_eqc).
+-copyright("2013, Erlang Solutions Ltd.").
 
 -include_lib("eqc/include/eqc.hrl").
 -include("fusco.hrl").

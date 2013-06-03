@@ -5,6 +5,7 @@
 %%% @end
 %%%=============================================================================
 -module(http_eqc_encoding).
+-copyright("2013, Erlang Solutions Ltd.").
 
 -export([add_content_length/2,
 	 body/1]).

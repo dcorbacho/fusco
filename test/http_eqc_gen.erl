@@ -5,6 +5,7 @@
 %%% @end
 %%%=============================================================================
 -module(http_eqc_gen).
+-copyright("2013, Erlang Solutions Ltd.").
 
 -include_lib("eqc/include/eqc.hrl").
 
