@@ -451,13 +451,6 @@ add_headers([], Body, Host, Connection, Headers) ->
 			 | Headers]);
 	_ ->
 	    add_headers([], undefined, Host, Connection, Headers)
-    end;
-add_headers([], _Body, Host, Connection, Headers) ->
-    case Host of
-	undefined ->
-	    {Headers, Connection};
-	_ ->
-	    {[[<<"Host: ">>, Host, ?HTTP_LINE_END] | Headers], Connection}
     end.
 
 %%------------------------------------------------------------------------------

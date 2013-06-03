@@ -46,19 +46,9 @@ prop_http_request_ipv6() ->
     prop_http_request_per_family("::1", inet6, false).
 
 prop_http_request_ipv4_ssl() ->
-    %% TODO Use CT for setup/cleanup
-    application:start(crypto),
-    application:start(public_key),
-    application:start(ssl),
-    application:start(fusco),
     prop_http_request_per_family("127.0.0.1", inet, true).
 
 prop_http_request_ipv6_ssl() ->
-    %% TODO Use CT for setup/cleanup
-    application:start(crypto),
-    application:start(public_key),
-    application:start(ssl),
-    application:start(fusco),
     prop_http_request_per_family("::1", inet6, true).
 
 prop_http_request_per_family(Host, Family, Ssl) ->
