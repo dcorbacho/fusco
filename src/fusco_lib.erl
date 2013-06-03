@@ -36,8 +36,6 @@
 -export([parse_url/1,
          format_request/6,
          header_value/2,
-         maybe_atom_to_list/1,
-         dec/1,
          update_cookies/2,
          to_lower/1,
 	 get_value/2,
@@ -77,21 +75,6 @@ header_value(Hdr, Hdrs) ->
     end.
 
 %%------------------------------------------------------------------------------
-%% @spec (Item) -> OtherItem
-%%   Item = atom() | list()
-%%   OtherItem = list()
-%% @doc
-%% Will make any item, being an atom or a list, in to a list. If it is a
-%% list, it is simple returned.
-%% @end
-%%------------------------------------------------------------------------------
--spec maybe_atom_to_list(atom() | list()) -> list().
-maybe_atom_to_list(Atom) when is_atom(Atom) ->
-    atom_to_list(Atom);
-maybe_atom_to_list(List) ->
-    List.
-
-%%------------------------------------------------------------------------------
 %% @spec (URL) -> #fusco_url{}
 %%   URL = string()
 %% @doc
@@ -126,16 +109,6 @@ format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
 	add_mandatory_hdrs(Path, Hdrs, Host, Body, Cookies),
     {[Method, <<" ">>, Path, <<" HTTP/1.1">>, ?HTTP_LINE_END, AllHdrs,
       ?HTTP_LINE_END, Body], ConHdr}.
-
-%%------------------------------------------------------------------------------
-%% @doc
-%% @end
-%%------------------------------------------------------------------------------
--spec dec(timeout()) -> timeout().
-dec(Num) when is_integer(Num) ->
-    Num - 1;
-dec(Else) ->
-    Else.
 
 %%------------------------------------------------------------------------------
 %% @private
