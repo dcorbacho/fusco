@@ -16,7 +16,7 @@ doc:
 	$(REBAR) doc
 
 test:	compile
-	$(REBAR) eunit
+	$(REBAR) eunit ct
 
 release: all dialyze test
 	$(REBAR) release
