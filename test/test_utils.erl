@@ -5,6 +5,7 @@
 %%% @end
 %%%=============================================================================
 -module(test_utils).
+-copyright("2013, Erlang Solutions Ltd.").
 
 -export([start_listener/1,
 	 start_listener/2,
