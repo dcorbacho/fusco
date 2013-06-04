@@ -20,13 +20,11 @@
 			     V/binary,"\r\n\r\n">>
 		   end).
 
--export([prop_http_request_ipv4/0, prop_http_request_ipv6/0,
-	 prop_http_request_ipv4_ssl/0, prop_http_request_ipv6_ssl/0]).
--export([prop_persistent_connection_ipv4/0, prop_persistent_connection_ipv6/0,
-	 prop_persistent_connection_ipv4_ssl/0, prop_persistent_connection_ipv6_ssl/0]).
--export([prop_reconnect_ipv4/0, prop_reconnect_ipv6/0]).
--export([prop_client_close_connection_ipv4/0, prop_client_close_connection_ipv6/0]).
--export([prop_connection_refused_ipv4/0, prop_connection_refused_ipv4_ssl/0]).
+-export([prop_http_request_per_family/3,
+	 prop_persistent_connection_per_family/3,
+	 prop_reconnect_per_family/3,
+	 prop_client_close_connection_per_family/3,
+	 prop_connection_refused_per_family/3]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -41,18 +39,6 @@ valid_http_request() ->
 %%==============================================================================
 %% Quickcheck properties
 %%==============================================================================
-prop_http_request_ipv4() ->
-    prop_http_request_per_family("127.0.0.1", inet, false).
-
-prop_http_request_ipv6() ->
-    prop_http_request_per_family("::1", inet6, false).
-
-prop_http_request_ipv4_ssl() ->
-    prop_http_request_per_family("127.0.0.1", inet, true).
-
-prop_http_request_ipv6_ssl() ->
-    prop_http_request_per_family("::1", inet6, true).
-
 prop_http_request_per_family(Host, Family, Ssl) ->
     eqc:numtests(
       500,
@@ -77,18 +63,6 @@ prop_http_request_per_family(Host, Family, Ssl) ->
 				    false
 			    end)
 	      end)).
-
-prop_persistent_connection_ipv4() ->
-    prop_persistent_connection_per_family("127.0.0.1", inet, false).
-
-prop_persistent_connection_ipv6() ->
-    prop_persistent_connection_per_family("::1", inet6, false).
-
-prop_persistent_connection_ipv4_ssl() ->
-    prop_persistent_connection_per_family("127.0.0.1", inet, true).
-
-prop_persistent_connection_ipv6_ssl() ->
-    prop_persistent_connection_per_family("::1", inet6, true).
 
 prop_persistent_connection_per_family(Host, Family, Ssl) ->
     %% Fusco must keep the connection alive and be able to reconnect
@@ -116,13 +90,7 @@ prop_persistent_connection_per_family(Host, Family, Ssl) ->
 			       end, Replies))
        end).
 
-prop_reconnect_ipv4() ->
-    prop_reconnect_per_family("127.0.0.1", inet).
-
-prop_reconnect_ipv6() ->
-    prop_reconnect_per_family("::1", inet6).
-
-prop_reconnect_per_family(Host, Family) ->
+prop_reconnect_per_family(Host, Family, Ssl) ->
     %% Connection is always closed in the server and fusco must reconnect
     eqc:numtests(
       50,
@@ -130,17 +98,18 @@ prop_reconnect_per_family(Host, Family) ->
 	 Msgs,
 	 non_empty(list(valid_http_request())),
 	 begin
+	     Module = select_module(Ssl),
 	     {ok, Listener, LS, Port} =
-		 webserver:start(gen_tcp,
+		 webserver:start(Module,
 				 [reply_and_close_msg(?TWO_OK) || _ <- Msgs],
 				 Family),
-	     {ok, Client} = fusco:connect({Host, Port, false}, []),
+	     {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
 	     Replies = lists:map(fun({{Method, Uri, _Version}, Headers, Body}) ->
 					 Hdrs = lists:keydelete(<<"Connection">>, 1, Headers),
 					 fusco:request(Client, Uri, Method, Hdrs, Body, 10000)
 				 end, Msgs),
 	     ok = fusco:disconnect(Client),
-	     webserver:stop(Listener, LS),
+	     webserver:stop(Module, Listener, LS),
 	     ?WHENFAIL(io:format("Replies: ~p~nExpected: 200 OK~n", [Replies]),
 		       lists:all(fun({ok, {{<<"200">>, <<"OK">>}, _, _, _, _}}) ->
 					 true;
@@ -149,13 +118,7 @@ prop_reconnect_per_family(Host, Family) ->
 				 end, Replies))
 	 end)).
 
-prop_client_close_connection_ipv4() ->
-    prop_client_close_connection_per_family("127.0.0.1", inet).
-
-prop_client_close_connection_ipv6() ->
-    prop_client_close_connection_per_family("::1", inet6).
-
-prop_client_close_connection_per_family(Host, Family) ->
+prop_client_close_connection_per_family(Host, Family, Ssl) ->
     %% Fusco must close the connection if requested by the server
     eqc:numtests(
       25,
@@ -163,11 +126,12 @@ prop_client_close_connection_per_family(Host, Family) ->
 	      {valid_http_request(), http_eqc_gen:connection_header()},
 	      begin
 		  Id = erlang:now(),
+		  Module = select_module(Ssl),
 		  {ok, Listener, LS, Port} =
-		      webserver:start(gen_tcp,
+		      webserver:start(Module,
 				      [reply_msg_and_check(Id, ?TWO_OK(Connection))],
 				      Family),
-		  {ok, Client} = fusco:connect({Host, Port, false}, []),
+		  {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
 		  {ok, {Status, _, _, _, _}}
 		      = fusco:request(Client, Uri, Method, Headers, Body, 10000), 
 		  Closed = receive
@@ -177,7 +141,7 @@ prop_client_close_connection_per_family(Host, Family) ->
 				   false
 			   end,
 		  ok = fusco:disconnect(Client),
-		  webserver:stop(Listener, LS),
+		  webserver:stop(Module, Listener, LS),
 		  Expected = {<<"200">>, <<"OK">>},
 		  MustClose = must_close(Headers, Connection),
 		  ?WHENFAIL(io:format("Connection: ~p~nStatus: ~p~nExpected:"
@@ -191,33 +155,24 @@ prop_client_close_connection_per_family(Host, Family) ->
 			    end)
 	      end)).
 
-prop_connection_refused_ipv4() ->
-    prop_connection_refused_per_family("127.0.0.1", inet, false).
-
-prop_connection_refused_ipv4_ssl() ->
-    prop_connection_refused_per_family("127.0.0.1", inet, true).
-
 prop_connection_refused_per_family(Host, Family, Ssl) ->
-    eqc:numtests(
-      1,
-      ?FORALL({{Method, Uri, _Version}, Headers, Body} = Msg,
-	      valid_http_request(),
-	      begin
-		  Module = select_module(Ssl),
-		  {ok, Listener, LS, Port} =
-		      webserver:start(Module, [reply_msg(<<>>)], Family),
-		  webserver:stop(Module, Listener, LS),
-		  Reply = fusco:connect({Host, Port, Ssl}, []),
-		  Expected = {error, econnrefused},
-		  ?WHENFAIL(io:format("Reply: ~p~nExpected: ~p~n",
-				      [Reply, Expected]),
-			    case Reply of
-				Expected ->
-				    true;
-				_ ->
-				    false
-			    end)
-	      end)).
+    eqc:numtests(1,
+      begin
+	  Module = select_module(Ssl),
+	  {ok, Listener, LS, Port} =
+	      webserver:start(Module, [reply_msg(<<>>)], Family),
+	  webserver:stop(Module, Listener, LS),
+	  Reply = fusco:connect({Host, Port, Ssl}, []),
+	  Expected = {error, econnrefused},
+	  ?WHENFAIL(io:format("Reply: ~p~nExpected: ~p~n",
+			      [Reply, Expected]),
+		    case Reply of
+			Expected ->
+			    true;
+			_ ->
+			    false
+		    end)
+      end).
 
 %%==============================================================================
 %% Internal functions
