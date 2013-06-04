@@ -27,6 +27,7 @@
 %%------------------------------------------------------------------------------
 %%% @private
 %%% @author Oscar Hellström <oscar@hellstrom.st>
+%%% @author Diana Parra Corbacho <diana.corbacho@erlang-solutions.com>
 %%% @doc
 %%% This module implements wrappers for socket operations.
 %%% Makes it possible to have the same interface to ssl and tcp sockets.

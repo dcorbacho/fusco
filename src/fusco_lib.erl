@@ -27,6 +27,7 @@
 %%------------------------------------------------------------------------------
 %%% @private
 %%% @author Oscar Hellström <oscar@hellstrom.st>
+%%% @author Diana Parra Corbacho <diana.corbacho@erlang-solutions.com>
 %%% @author Ramon Lastres Guerrero <ramon.lastres@erlang-solutions.com>
 %%% @doc
 %%% This module implements various library functions used in fusco
