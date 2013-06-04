@@ -49,9 +49,6 @@ stop_app(_) ->
 tcp_test_() ->
     {inorder,
         {setup, fun start_app/0, fun stop_app/1, [
-                ?_test(basic_auth()),
-                ?_test(missing_basic_auth()),
-                ?_test(wrong_basic_auth()),
                 ?_test(get_with_connect_options()),
                 ?_test(no_content_length()),
                 ?_test(no_content_length_1_0()),
@@ -68,42 +65,6 @@ options_test() ->
 
 cookies_test() ->
     cookies().
-
-basic_auth() ->
-    User = "foo",
-    Passwd = "bar",
-    {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/empty", "GET",
-				    [{<<"Authorization">>,
-					     ["Basic ", base64:encode(User ++ ":" ++ Passwd)]}],
-				    [], 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
-    ?assertEqual(<<"OK">>, body(Response)).
-
-missing_basic_auth() ->
-    User = "foo",
-    Passwd = "bar",
-    {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/empty", "GET", [], [], 1000),
-    ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
-    ?assertEqual(<<"missing_auth">>, body(Response)).
-
-wrong_basic_auth() ->
-    User = "foo",
-    Passwd = "bar",
-    {ok, _, _, Port} = webserver:start(gen_tcp, [webserver_utils:basic_auth_responder(User, Passwd)]),
-    URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
-    {ok, Response} = fusco:request(Client, "/empty", "GET",
-					   [{<<"Authorization">>,
-					     ["Basic ", base64:encode(User ++ ":wrong_password")]}],
-				    [], 1000),
-    ?assertEqual({<<"401">>, <<"Unauthorized">>}, status(Response)),
-    ?assertEqual(<<"wrong_auth">>, body(Response)).
 
 get_with_connect_options() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),

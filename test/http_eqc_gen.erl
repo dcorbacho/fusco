@@ -56,7 +56,7 @@ request_header() ->
      {<<"Accept-Charset">>, small_valid_bin()},
      {<<"Accept-Encoding">>, small_valid_bin()},
      {<<"Accept-Language">>, small_valid_bin()},
-     {<<"Authorization">>, small_valid_bin()},
+     {<<"Authorization">>, authorization()},
      {<<"Expect">>, small_valid_bin()},
      {<<"From">>, small_valid_bin()},
      {<<"Host">>, small_valid_bin()},
@@ -72,6 +72,13 @@ request_header() ->
      {<<"TE">>, small_valid_bin()},
      {<<"User-Agent">>, small_valid_bin()}
     ].
+
+authorization() ->
+    ?LET({User, Pass}, {small_valid_bin(), small_valid_bin()},
+	 begin
+	     Encoded = base64:encode(<<User/binary, $:, Pass/binary>>),
+	     <<"Basic ", Encoded/binary>>
+	 end).
 
 header() ->
     lists:append([general_header(), entity_header(), response_header()]).
