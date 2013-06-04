@@ -26,6 +26,7 @@
 	 prop_persistent_connection_ipv4_ssl/0, prop_persistent_connection_ipv6_ssl/0]).
 -export([prop_reconnect_ipv4/0, prop_reconnect_ipv6/0]).
 -export([prop_client_close_connection_ipv4/0, prop_client_close_connection_ipv6/0]).
+-export([prop_connection_refused_ipv4/0, prop_connection_refused_ipv4_ssl/0]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -185,6 +186,34 @@ prop_client_close_connection_per_family(Host, Family) ->
 			    case Status of
 				Expected ->
 				    MustClose == Closed;
+				_ ->
+				    false
+			    end)
+	      end)).
+
+prop_connection_refused_ipv4() ->
+    prop_connection_refused_per_family("127.0.0.1", inet, false).
+
+prop_connection_refused_ipv4_ssl() ->
+    prop_connection_refused_per_family("127.0.0.1", inet, true).
+
+prop_connection_refused_per_family(Host, Family, Ssl) ->
+    eqc:numtests(
+      1,
+      ?FORALL({{Method, Uri, _Version}, Headers, Body} = Msg,
+	      valid_http_request(),
+	      begin
+		  Module = select_module(Ssl),
+		  {ok, Listener, LS, Port} =
+		      webserver:start(Module, [reply_msg(<<>>)], Family),
+		  webserver:stop(Module, Listener, LS),
+		  Reply = fusco:connect({Host, Port, Ssl}, []),
+		  Expected = {error, econnrefused},
+		  ?WHENFAIL(io:format("Reply: ~p~nExpected: ~p~n",
+				      [Reply, Expected]),
+			    case Reply of
+				Expected ->
+				    true;
 				_ ->
 				    false
 			    end)

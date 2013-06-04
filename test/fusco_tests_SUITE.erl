@@ -15,7 +15,8 @@ all() ->
      prop_persistent_connection_ipv4, prop_persistent_connection_ipv6,
      prop_persistent_connection_ipv4_ssl, prop_persistent_connection_ipv6_ssl,
      prop_reconnect_ipv4, prop_reconnect_ipv6, prop_client_close_connection_ipv4,
-     prop_client_close_connection_ipv6].
+     prop_client_close_connection_ipv6, prop_connection_refused_ipv4,
+     prop_connection_refused_ipv4_ssl].
 
 init_per_suite(Config) ->
     [ok = application:start(App) || App <- apps()],
@@ -66,6 +67,12 @@ prop_client_close_connection_ipv4(_) ->
 
 prop_client_close_connection_ipv6(_) ->
     do_prop(prop_client_close_connection_ipv6).
+
+prop_connection_refused_ipv4(_) ->
+    do_prop(prop_connection_refused_ipv4).
+
+prop_connection_refused_ipv4_ssl(_) ->
+    do_prop(prop_connection_refused_ipv4_ssl).
 
 %%==============================================================================
 %% Internal functions

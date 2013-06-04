@@ -49,7 +49,6 @@ stop_app(_) ->
 tcp_test_() ->
     {inorder,
         {setup, fun start_app/0, fun stop_app/1, [
-                ?_test(connection_refused()),
                 ?_test(basic_auth()),
                 ?_test(missing_basic_auth()),
                 ?_test(wrong_basic_auth()),
@@ -69,10 +68,6 @@ options_test() ->
 
 cookies_test() ->
     cookies().
-
-connection_refused() ->
-    Response = fusco:connect("http://127.0.0.1:50234/none", []),
-    ?assertEqual({error, econnrefused}, Response).
 
 basic_auth() ->
     User = "foo",
