@@ -1,7 +1,8 @@
 %%%=============================================================================
-%%% @copyright (C) 1999-2013, Erlang Solutions Ltd
+%%% @copyright (C) 2013, Erlang Solutions Ltd
 %%% @author Diana Corbacho <diana.corbacho@erlang-solutions.com>
 %%% @doc
+%%%
 %%% @end
 %%%=============================================================================
 -module(fusco_protocol).
