@@ -327,12 +327,9 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 	   fun(#fusco_cookie{path = undefined}) ->
 		   true;
 	      (X) ->
-		   IsPrefix = binary:match(X#fusco_cookie.path, Path,
-					   [{scope, {0, byte_size(Path)}}]),
-		   if (IsPrefix == nomatch) ->
-			   false;
-		      true ->
-			   true
+		   case binary:match(Path, X#fusco_cookie.path) of
+		       {0, _} -> true;
+		       _ -> false
 		   end
 	   end, Cookies)
     of
