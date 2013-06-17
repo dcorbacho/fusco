@@ -35,10 +35,12 @@ recv(Socket, Ssl) ->
 	    {error, Reason}
     end.
 
-decode_status_line(<<"HTTP/1.0\s", Rest/bits>>, Response) ->
-    decode_status_code(Rest, Response#response{version = {1,0}});
-decode_status_line(<<"HTTP/1.1\s", Rest/bits>>, Response) ->
-    decode_status_code(Rest, Response#response{version = {1,1}});
+decode_status_line(<<"HTTP/1.0\s",C1,C2,C3,$\s,Rest/bits>>, Response) ->
+    decode_reason_phrase(Rest, <<>>, Response#response{version = {1,0},
+						       status_code = <<C1,C2,C3>>});
+decode_status_line(<<"HTTP/1.1\s",C1,C2,C3,$\s,Rest/bits>>, Response) ->
+    decode_reason_phrase(Rest, <<>>, Response#response{version = {1,1},
+						       status_code = <<C1,C2,C3>>});
 decode_status_line(Bin, Response = #response{size = Size}) when Size < 10 ->
     case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
@@ -48,18 +50,6 @@ decode_status_line(Bin, Response = #response{size = Size}) when Size < 10 ->
     end;    
 decode_status_line(_, _) ->
     {error, status_line}.
-
-decode_status_code(<<C1,C2,C3,$\s,Rest/bits>>, Response) ->
-    decode_reason_phrase(Rest, <<>>, Response#response{status_code = <<C1,C2,C3>>});
-decode_status_code(Bin, Response) when byte_size(Bin) < 4 ->
-    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
-	{ok, Data} ->
-	    decode_status_code(<<Bin/binary, Data/binary>>, ?SIZE(Data, Response));
-	{error, Reason} ->
-	    {error, Reason}
-    end;    
-decode_status_code(_, _) ->
-    {error, status_code}.
 
 decode_reason_phrase(<<>>, Acc, Response) ->
     case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
@@ -193,7 +183,7 @@ decode_header_value(<<$\r>>, H, V, T, Response) ->
     end;
 decode_header_value(<<$\n, Rest/bits>>, <<"content-length">> = H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
-					  content_length = list_to_integer(binary_to_list(V))});
+					  content_length = binary_to_integer(V)});
 decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{cookies = [decode_cookie(V)
 						     | Response#response.cookies],
@@ -206,7 +196,7 @@ decode_header_value(<<$\r, $\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, Respon
 					  headers = [{H, V} | Response#response.headers]});
 decode_header_value(<<$\r,$\n, Rest/bits>>, <<"content-length">> = H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
-					  content_length = list_to_integer(binary_to_list(V))});
+					  content_length = binary_to_integer(V)});
 decode_header_value(<<$\r, $\n, Rest/bits>>, H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers]});
 decode_header_value(<<$\s, Rest/bits>>, H, V, T, Response) ->
@@ -405,12 +395,12 @@ decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
 
 decode_body(<<>>, Response = #response{status_code = <<$1, _, _>>}) ->
     return(<<>>, Response);
+decode_body(<<$\r, $\n, Rest/bits>>, Response) ->
+    decode_body(Rest, Response);
 decode_body(Rest, Response = #response{status_code = <<$1, _, _>>}) ->
     decode_status_line(Rest, #response{socket = Response#response.socket,
 				       ssl = Response#response.ssl,
 				       in_timestamp = Response#response.in_timestamp});
-decode_body(<<$\r, $\n, Rest/bits>>, Response) ->
-    decode_body(Rest, Response);
 decode_body(Rest, Response) ->
     case byte_size(Rest) >= Response#response.content_length of
 	true ->

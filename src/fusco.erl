@@ -402,7 +402,7 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 	      From,
 	      {ok, {{Status, Reason}, Headers, Body, Size,
 		    timer:now_diff(In, Out)}}),
-	    case maybe_close_socket(State, Vsn, ConHdr, Connection) of
+	    case maybe_close_socket(Connection, State, Vsn, ConHdr) of
 		undefined ->
 		    case UseCookies of
 			true ->
@@ -435,12 +435,12 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, _, <<"close">>) ->
+maybe_close_socket(<<"close">>, #client_state{socket = Socket} = State, {1, 1}, _) ->
     fusco_sock:close(Socket, State#client_state.ssl),
     undefined;
-maybe_close_socket(#client_state{socket = Socket}, {1, 1}, undefined, _) ->
+maybe_close_socket(_, #client_state{socket = Socket}, {1, 1}, undefined) ->
     Socket;
-maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ConHdr, _) ->
+maybe_close_socket(_, #client_state{socket = Socket} = State, {1, 1}, ConHdr) ->
     ClientConnection = fusco_lib:is_close(ConHdr),
     if
         ClientConnection ->
@@ -449,13 +449,13 @@ maybe_close_socket(#client_state{socket = Socket} = State, {1, 1}, ConHdr, _) ->
         (not ClientConnection) ->
             Socket
     end;
-maybe_close_socket(#client_state{socket = Socket}, _, undefined, <<"keep-alive">>) ->
+maybe_close_socket(<<"keep-alive">>, #client_state{socket = Socket}, _, undefined) ->
     Socket;
-maybe_close_socket(#client_state{socket = Socket} = State, _, _, C)
+maybe_close_socket(C, #client_state{socket = Socket} = State, _, _)
   when C =/= <<"keep-alive">> ->
     fusco_sock:close(Socket, State#client_state.ssl),
     undefined;
-maybe_close_socket(#client_state{socket = Socket} = State, _, ConHdr, _) ->
+maybe_close_socket(_, #client_state{socket = Socket} = State, _, ConHdr) ->
     ClientConnection = fusco_lib:is_close(ConHdr),
     if
         ClientConnection ->

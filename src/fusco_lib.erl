@@ -326,8 +326,8 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
     case lists:filter(
 	   fun(#fusco_cookie{path = undefined}) ->
 		   true;
-	      (X) ->
-		   case binary:match(Path, X#fusco_cookie.path) of
+	      (#fusco_cookie{path = CookiePath}) ->
+		   case binary:match(Path, CookiePath) of
 		       {0, _} -> true;
 		       _ -> false
 		   end
@@ -338,6 +338,7 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 	IncludeCookies ->
 	    {add_cookie_headers(ContentHdrs, IncludeCookies), ConHdr}
     end.
+
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
