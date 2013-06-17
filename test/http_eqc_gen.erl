@@ -235,7 +235,8 @@ http_method() ->
     ["OPTIONS", "GET", "HEAD", "POST", "PUT", "DELETE", "TRACE", "CONNECT"].
 
 request_uri() ->
-    ["*", "http://www.w3.org/pub/WWW/TheProject.html", "/pub/WWW/TheProject.html"].
+    [<<"*">>, <<"http://www.w3.org/pub/WWW/TheProject.html">>,
+     <<"/pub/WWW/TheProject.html">>].
 
 request_line() ->
     ?LET({Method, RequestUri},

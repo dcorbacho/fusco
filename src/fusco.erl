@@ -174,13 +174,15 @@ request(Client, Path, Method, Hdrs, Body, Timeout) ->
 %% @end
 %%------------------------------------------------------------------------------
 -spec request(pid(), string(), method(), headers(), iodata(), integer(), pos_timeout()) -> result().
-request(Client, Path, Method, Hdrs, Body, SendRetry, Timeout) ->
+request(Client, Path, Method, Hdrs, Body, SendRetry, Timeout) when is_binary(Path) ->
     try
 	gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry}, Timeout)
     catch
 	exit:{timeout, _} ->
 	    {error, timeout}
-    end.
+    end;
+request(_, _, _, _, _, _, _) ->
+    {error, badarg}.
 
 %%%===================================================================
 %%% gen_server callbacks
