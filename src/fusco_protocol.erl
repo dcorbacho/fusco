@@ -422,11 +422,14 @@ max_age(Value) ->
     list_to_integer(binary_to_list(Value)) * 1000000.
 
 %% http://tools.ietf.org/html/rfc2616#section-3.3.1
+%% Supports some non-standard datetime (Tomcat) Tue, 06-Nov-1994 08:49:37 GMT
 expires(<<_,_,_,$,,$\s,D1,D2,$\s,M1,M2,M3,$\s,Y1,Y2,Y3,Y4,$\s,Rest/bits>>) ->
     expires(Rest, {list_to_integer([Y1,Y2,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])});
 expires(<<_,_,_,$\s,Mo1,Mo2,Mo3,$\s,D1,D2,$\s,H1,H2,$:,M1,M2,$:,S1,S2,$\s,Y1,Y2,Y3,Y4,_Rest/bits>>) ->
     {{list_to_integer([Y1,Y2,Y3,Y4]),month(<<Mo1,Mo2,Mo3>>),list_to_integer([D1,D2])},
      {list_to_integer([H1,H2]), list_to_integer([M1,M2]), list_to_integer([S1,S2])}};
+expires(<<_,_,_,$,,$\s,Rest/bits>>) ->
+    expires(Rest);
 expires(<<"Monday",$,,$\s,Rest/bits>>) ->
     expires(Rest);
 expires(<<"Tuesday",$,,$\s,Rest/bits>>) ->
@@ -441,6 +444,8 @@ expires(<<"Saturday",$,,$\s,Rest/bits>>) ->
     expires(Rest);
 expires(<<"Sunday",$,,$\s,Rest/bits>>) ->
     expires(Rest);
+expires(<<D1,D2,$\-,M1,M2,M3,$\-,Y1,Y2,Y3,Y4,$\s,Rest/bits>>) ->
+    expires(Rest, {list_to_integer([Y1,Y2,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])});
 expires(<<D1,D2,$\-,M1,M2,M3,$\-,Y3,Y4,$\s,Rest/bits>>) ->
     expires(Rest, {list_to_integer([$2,$0,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])}).
 
