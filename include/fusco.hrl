@@ -54,4 +54,5 @@
 		   content_length = 0,
 		   size,
 		   in_timestamp,
+		   transfer_encoding,
 		   body}).

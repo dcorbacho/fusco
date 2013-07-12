@@ -164,6 +164,8 @@ decode_header_value_ws(<<$\t, Rest/bits>>, H, S) ->
     decode_header_value_ws(Rest, H, S);
 decode_header_value_ws(Rest, <<"connection">> = H, S) ->
     decode_header_value_lc(Rest, H, <<>>, <<>>, S);
+decode_header_value_ws(Rest, <<"transfer-encoding">> = H, S) ->
+    decode_header_value_lc(Rest, H, <<>>, <<>>, S);
 decode_header_value_ws(Rest, H, S) ->
     decode_header_value(Rest, H, <<>>, <<>>, S).
 
@@ -183,10 +185,10 @@ decode_header_value(<<$\r>>, H, V, T, Response) ->
     end;
 decode_header_value(<<$\n, Rest/bits>>, <<"content-length">> = H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
-					  content_length = binary_to_integer(V)});
+						content_length = binary_to_integer(V)});
 decode_header_value(<<$\n, Rest/bits>>, <<"set-cookie">> = H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{cookies = [decode_cookie(V)
-						     | Response#response.cookies],
+							   | Response#response.cookies],
 					  headers = [{H, V} | Response#response.headers]});
 decode_header_value(<<$\n, Rest/bits>>, H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers]});
@@ -222,12 +224,18 @@ decode_header_value_lc(<<$\r>>, H, V, T, Response) ->
 	{error, Reason} ->
 	    {error, Reason}
     end;
+decode_header_value_lc(<<$\n, Rest/bits>>, <<"transfer-encoding">> = H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
+						transfer_encoding = V});
 decode_header_value_lc(<<$\n, Rest/bits>>, H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
-					  connection = V});
+						connection = V});
+decode_header_value_lc(<<$\r, $\n, Rest/bits>>, <<"transfer-encoding">> = H, V, _T, Response) ->
+    decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
+						transfer_encoding = V});
 decode_header_value_lc(<<$\r, $\n, Rest/bits>>, H, V, _T, Response) ->
     decode_header(Rest, <<>>, Response#response{headers = [{H, V} | Response#response.headers],
-					  connection = V});
+						connection = V});
 decode_header_value_lc(<<$\s, Rest/bits>>, H, V, T, Response) ->
     decode_header_value_lc(Rest, H, V, <<T/binary, $\s>>, Response);
 decode_header_value_lc(<<$\t, Rest/bits>>, H, V, T, Response) ->
@@ -401,6 +409,8 @@ decode_body(Rest, Response = #response{status_code = <<$1, _, _>>}) ->
     decode_status_line(Rest, #response{socket = Response#response.socket,
 				       ssl = Response#response.ssl,
 				       in_timestamp = Response#response.in_timestamp});
+decode_body(Rest, Response = #response{transfer_encoding = <<"chunked">>}) ->
+    download_chunked_body(Rest, Response);
 decode_body(Rest, Response) ->
     case byte_size(Rest) >= Response#response.content_length of
 	true ->
@@ -413,6 +423,60 @@ decode_body(Rest, Response) ->
 		    %% NOTE: Return what we have so far
 		    return(Rest, Response)
 	    end
+    end.
+
+download_chunked_body(<<>>, Response) ->
+    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
+	{ok, Data} ->
+	    decode_chunked_body(Data, <<>>, <<>>, ?SIZE(Data, Response));
+	_ ->
+	    return(<<>>, Response)
+    end;
+download_chunked_body(Rest, Response) ->
+    decode_chunked_body(Rest, <<>>, <<>>, Response).
+
+decode_chunked_body(<<$0,$\r,$\n,$\r,$\n>>, Acc, _, Response) ->
+    return(Acc, Response);
+decode_chunked_body(<<$0, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $0>>, Response);
+decode_chunked_body(<<$1, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $1>>, Response);
+decode_chunked_body(<<$2, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $2>>, Response);
+decode_chunked_body(<<$3, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $3>>, Response);
+decode_chunked_body(<<$4, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $4>>, Response);
+decode_chunked_body(<<$5, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $5>>, Response);
+decode_chunked_body(<<$6, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $6>>, Response);
+decode_chunked_body(<<$7, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $7>>, Response);
+decode_chunked_body(<<$8, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $8>>, Response);
+decode_chunked_body(<<$9, Rest/bits>>, Acc, Size, Response) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, $9>>, Response);
+decode_chunked_body(<<$\r,$\n, Rest/bits>>, Acc, <<>>, Response) ->
+    decode_chunked_body(Rest, Acc, <<>>, Response);
+decode_chunked_body(<<$\r,$\n, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
+    IntSize = erlang:binary_to_integer(Size, 16),
+    decode_chunked_body(Rest, Acc, IntSize, Response);
+decode_chunked_body(Rest, Acc, Size, Response) ->
+    case byte_size(Rest) of
+	S when S == Size ->
+	    decode_chunked_body(<<>>, <<Acc/bits, Rest/bits>>, <<>>, Response);
+	S when S < Size ->
+	    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
+		{ok, Data} ->
+		    decode_chunked_body(<<Rest/bits, Data/bits>>, Acc, Size, ?SIZE(Data, Response));
+		_ ->
+		    return(Acc, Response)
+	    end;
+	S when S > Size ->
+	    Current = binary:part(Rest, 0, Size),
+	    Next = binary:part(Rest, Size, S - Size),
+	    decode_chunked_body(Next, <<Acc/bits, Current/bits>>, <<>>, Response)
     end.
 
 return(Body, Response) ->
