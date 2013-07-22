@@ -437,25 +437,25 @@ download_chunked_body(Rest, Response) ->
 
 decode_chunked_body(<<$0,$\r,$\n,$\r,$\n>>, Acc, _, Response) ->
     return(Acc, Response);
-decode_chunked_body(<<$0, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$0, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $0>>, Response);
-decode_chunked_body(<<$1, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$1, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $1>>, Response);
-decode_chunked_body(<<$2, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$2, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $2>>, Response);
-decode_chunked_body(<<$3, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$3, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $3>>, Response);
-decode_chunked_body(<<$4, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$4, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $4>>, Response);
-decode_chunked_body(<<$5, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$5, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $5>>, Response);
-decode_chunked_body(<<$6, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$6, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $6>>, Response);
-decode_chunked_body(<<$7, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$7, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $7>>, Response);
-decode_chunked_body(<<$8, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$8, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $8>>, Response);
-decode_chunked_body(<<$9, Rest/bits>>, Acc, Size, Response) ->
+decode_chunked_body(<<$9, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     decode_chunked_body(Rest, Acc, <<Size/bits, $9>>, Response);
 decode_chunked_body(<<$\r,$\n, Rest/bits>>, Acc, <<>>, Response) ->
     decode_chunked_body(Rest, Acc, <<>>, Response);
