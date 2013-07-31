@@ -409,14 +409,14 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 		    case UseCookies of
 			true ->
 			    {noreply, State#client_state{socket = undefined,
-							 cookies = fusco_lib:update_cookies(NewCookies, Cookies)}};
+							 cookies = fusco_lib:update_cookies(NewCookies, Cookies, In)}};
 			false ->
 			    {noreply, State#client_state{socket = undefined}}
 		    end;
 		_ ->
 		    case UseCookies of
 			true ->
-			    {noreply, State#client_state{cookies = fusco_lib:update_cookies(NewCookies, Cookies)}};
+			    {noreply, State#client_state{cookies = fusco_lib:update_cookies(NewCookies, Cookies, In)}};
 			_ ->
 			    {noreply, State}
 		    end

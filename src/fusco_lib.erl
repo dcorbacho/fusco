@@ -13,7 +13,7 @@
 -export([parse_url/1,
          format_request/6,
          header_value/2,
-         update_cookies/2,
+         update_cookies/3,
          to_lower/1,
 	 get_value/2,
 	 get_value/3,
@@ -92,14 +92,14 @@ format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
 %% @doc Updated the state of the cookies. after we receive a response.
 %% @end
 %%------------------------------------------------------------------------------
--spec update_cookies(headers(), [#fusco_cookie{}]) -> [#fusco_cookie{}].
-update_cookies([], []) ->
+-spec update_cookies(headers(), [#fusco_cookie{}], erlang:timestamp()) -> [#fusco_cookie{}].
+update_cookies([], [], _) ->
     [];
-update_cookies([], StateCookies) ->
-    delete_expired_cookies(StateCookies);
-update_cookies(ReceivedCookies, []) ->
-    delete_expired_cookies(ReceivedCookies);
-update_cookies(ReceivedCookies, StateCookies) ->
+update_cookies([], StateCookies, InTimestamp) ->
+    delete_expired_cookies(StateCookies, InTimestamp);
+update_cookies(ReceivedCookies, [], InTimestamp) ->
+    delete_expired_cookies(ReceivedCookies, InTimestamp);
+update_cookies(ReceivedCookies, StateCookies, InTimestamp) ->
     %% substitute the cookies with the same name, add the others, delete.
     Substituted =
     	lists:foldl(fun(X = #fusco_cookie{value = <<"deleted">>}, Acc) ->
@@ -110,7 +110,7 @@ update_cookies(ReceivedCookies, StateCookies) ->
 					   #fusco_cookie.name, Acc, X)
     		    end, StateCookies, ReceivedCookies),
     %% Delete the cookies that are expired (check max-age and expire fields).
-    delete_expired_cookies(Substituted).
+    delete_expired_cookies(Substituted, InTimestamp).
 
 
 %%------------------------------------------------------------------------------
@@ -205,20 +205,19 @@ get_value(Key, List, Default) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
--spec delete_expired_cookies([#fusco_cookie{}]) -> [#fusco_cookie{}].
-delete_expired_cookies([]) ->
+-spec delete_expired_cookies([#fusco_cookie{}], erlang:timestamp()) -> [#fusco_cookie{}].
+delete_expired_cookies([], _InTimestamp) ->
     [];
-delete_expired_cookies(Cookies) ->
-    [ X || X <- Cookies, not expires(X)].
+delete_expired_cookies(Cookies, InTimestamp) ->
+    [ X || X <- Cookies, not expires(X, InTimestamp)].
 
-expires(#fusco_cookie{value = <<"deleted">>}) ->
+expires(#fusco_cookie{value = <<"deleted">>}, _) ->
     true;
-expires(#fusco_cookie{max_age = Max,
-		       timestamp = T}) when Max =/= undefined ->
-    timer:now_diff(os:timestamp(), T) > Max;
-expires(#fusco_cookie{expires = Exp}) when Exp =/= undefined ->
+expires(#fusco_cookie{max_age = Max}, InTimestamp) when Max =/= undefined ->
+    timer:now_diff(os:timestamp(), InTimestamp) > Max;
+expires(#fusco_cookie{expires = Exp}, _) when Exp =/= undefined ->
     calendar:universal_time() > Exp;
-expires(_) ->
+expires(_, _) ->
     false.
 
 %%------------------------------------------------------------------------------

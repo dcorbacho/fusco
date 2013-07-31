@@ -48,7 +48,7 @@ prop_http_response(ConnectionState) ->
 		  Recv = fusco_protocol:recv(Socket, false),
 		  test_utils:stop_listener(L),
 		  Expected = expected_output(StatusLine, Headers, Cookies, Body, Msg),
-		  Cleared = clear_record(clear_connection(clear_timestamps(Recv))),
+		  Cleared = clear_record(clear_connection(Recv)),
 		  ?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
 				      " ~p~nCleared: ~p~nExpected: ~p~n",
 				      [binary:list_to_bin(Msg), Recv, Cleared, Expected]),
@@ -83,6 +83,8 @@ expected_output({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body, Msg) 
 							LowerHeaders)),
 	      body = Body,
 	      content_length = byte_size(Body),
+	      transfer_encoding = to_lower(proplists:get_value(<<"transfer-encoding">>,
+							       LowerHeaders)),
 	      size = byte_size(list_to_binary(Msg))}.
 
 output_cookies(Cookies) ->
@@ -131,12 +133,6 @@ clear_record(Response) ->
 		      ssl = undefined,
 		      in_timestamp = undefined}.
 
-clear_timestamps(Response) when is_record(Response, response) ->
-    Response#response{cookies = [Co#fusco_cookie{timestamp=undefined}
-				 || Co <- Response#response.cookies]};
-clear_timestamps(Error) ->
-    Error.
-
 clear_connection(Response) when is_record(Response, response) ->
     Response#response{connection = to_lower(Response#response.connection)};
 clear_connection(Error) ->
@@ -166,7 +162,7 @@ headers_to_lower(Headers) ->
     [begin
 	 He = to_lower(H),
 	 case He of
-	     <<"connection">> ->
+	     LH when LH == <<"connection">>; LH == <<"transfer-encoding">> ->
 		 {He, to_lower(V)};
 	     _ ->
 		 {He, V}

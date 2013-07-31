@@ -39,9 +39,8 @@
 	  expires :: {{integer(), integer(), integer()},
 				{integer(), integer(), integer()}} | atom(),
 	  path :: binary(),
-	  max_age :: integer() | atom(),
-	  timestamp :: atom() | {integer(), integer(), integer()}
-}).
+	  max_age :: integer() | atom()
+	 }).
 
 -record(response, {socket,
 		   ssl,
