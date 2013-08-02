@@ -8,6 +8,7 @@
 -copyright("2013, Erlang Solutions Ltd.").
 
 -export([add_content_length/2,
+	 add_transfer_encoding/2,
 	 body/1]).
 
 add_content_length(Headers, <<>>) ->
@@ -24,3 +25,14 @@ body({_, <<$3,$0,$4>>, _}) ->
     <<>>;
 body(_) ->
     http_eqc_gen:body().
+
+add_transfer_encoding(Headers, <<>>) ->
+    Headers;
+add_transfer_encoding(Headers, Encoding) ->
+    lists:keystore(<<"Transfer-Encoding">>, 1,
+		   remove_transfer_encoding(Headers),
+		   {<<"Transfer-Encoding">>, Encoding}).
+    
+remove_transfer_encoding(Headers) ->
+    lists:filter(fun({H, _}) -> H =/= <<"Transfer-Encoding">> end, Headers).
+    

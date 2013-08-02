@@ -250,3 +250,13 @@ small_valid_bin() ->
 body() ->
     ?LET(String, list(choose($A, $z)),
 	 list_to_binary(String)).
+
+body(Size) ->
+    ?LET(String, vector(Size, choose($A, $z)), String).
+
+chunked_body() ->
+    ?LET(PosNats, non_empty(list(?SUCHTHAT(Nat, nat(), Nat > 0))),
+	 ?LET(Bins, [body(Size) || Size <- PosNats],
+	      lists:zip(PosNats, Bins)
+	     )
+	).

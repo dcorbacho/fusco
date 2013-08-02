@@ -403,12 +403,14 @@ decode_body(<<>>, Response = #response{status_code = <<$1, _, _>>}) ->
     return(<<>>, Response);
 decode_body(<<$\r, $\n, Rest/bits>>, Response) ->
     decode_body(Rest, Response);
-decode_body(Rest, Response = #response{status_code = <<$1, _, _>>}) ->
+decode_body(Rest, Response = #response{status_code = <<$1, _, _>>,
+				       transfer_encoding = TE})
+  when TE =/= <<"chunked">> ->
     decode_status_line(Rest, #response{socket = Response#response.socket,
 				       ssl = Response#response.ssl,
 				       in_timestamp = Response#response.in_timestamp});
 decode_body(Rest, Response = #response{transfer_encoding = <<"chunked">>}) ->
-    download_chunked_body(Rest, Response);
+    decode_chunked_body(Rest, <<>>, <<>>, Response);
 decode_body(Rest, Response) ->
     case byte_size(Rest) >= Response#response.content_length of
 	true ->
@@ -423,54 +425,37 @@ decode_body(Rest, Response) ->
 	    end
     end.
 
-download_chunked_body(<<>>, Response) ->
+download_chunked_body(Rest, Acc, Size, Response) ->
     case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
-	    decode_chunked_body(Data, <<>>, <<>>, ?SIZE(Data, Response));
+	    decode_chunked_body(<<Rest/bits, Data/bits>>, Acc, Size,
+				?SIZE(Data, Response));
 	_ ->
-	    return(<<>>, Response)
-    end;
-download_chunked_body(Rest, Response) ->
-    decode_chunked_body(Rest, <<>>, <<>>, Response).
+	    return(Acc, Response)
+    end.
 
 decode_chunked_body(<<$0,$\r,$\n,$\r,$\n>>, Acc, _, Response) ->
     return(Acc, Response);
-decode_chunked_body(<<$0, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $0>>, Response);
-decode_chunked_body(<<$1, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $1>>, Response);
-decode_chunked_body(<<$2, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $2>>, Response);
-decode_chunked_body(<<$3, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $3>>, Response);
-decode_chunked_body(<<$4, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $4>>, Response);
-decode_chunked_body(<<$5, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $5>>, Response);
-decode_chunked_body(<<$6, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $6>>, Response);
-decode_chunked_body(<<$7, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $7>>, Response);
-decode_chunked_body(<<$8, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $8>>, Response);
-decode_chunked_body(<<$9, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
-    decode_chunked_body(Rest, Acc, <<Size/bits, $9>>, Response);
+decode_chunked_body(<<$0, Rest/bits>> = R, Acc, Size, Response)
+  when is_binary(Size),	byte_size(Rest) < 4 ->
+    download_chunked_body(R, Acc, Size, Response);
+decode_chunked_body(<<$\r>> = R, Acc, Size, Response) when is_binary(Size) ->
+    download_chunked_body(R, Acc, Size, Response);
 decode_chunked_body(<<$\r,$\n, Rest/bits>>, Acc, <<>>, Response) ->
     decode_chunked_body(Rest, Acc, <<>>, Response);
 decode_chunked_body(<<$\r,$\n, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
     IntSize = erlang:binary_to_integer(Size, 16),
     decode_chunked_body(Rest, Acc, IntSize, Response);
-decode_chunked_body(Rest, Acc, Size, Response) ->
+decode_chunked_body(<<C, Rest/bits>>, Acc, Size, Response) when is_binary(Size) ->
+    decode_chunked_body(Rest, Acc, <<Size/bits, C>>, Response);
+decode_chunked_body(<<>> = R, Acc, Size, Response) when is_binary(Size) ->
+    download_chunked_body(R, Acc, Size, Response);
+decode_chunked_body(Rest, Acc, Size, Response) when is_integer(Size) ->
     case byte_size(Rest) of
 	S when S == Size ->
 	    decode_chunked_body(<<>>, <<Acc/bits, Rest/bits>>, <<>>, Response);
 	S when S < Size ->
-	    case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
-		{ok, Data} ->
-		    decode_chunked_body(<<Rest/bits, Data/bits>>, Acc, Size, ?SIZE(Data, Response));
-		_ ->
-		    return(Acc, Response)
-	    end;
+	    download_chunked_body(Rest, Acc, Size, Response);
 	S when S > Size ->
 	    Current = binary:part(Rest, 0, Size),
 	    Next = binary:part(Rest, Size, S - Size),

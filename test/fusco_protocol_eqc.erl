@@ -11,7 +11,8 @@
 -include("fusco.hrl").
 
 -export([prop_http_response_close_connection/0,
-	 prop_http_response_keep_alive/0]).
+	 prop_http_response_keep_alive/0,
+	 prop_chunked_http_response_keep_alive/0]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -22,6 +23,15 @@ valid_http_message() ->
 	  list(http_eqc_gen:set_cookie())},
 	 ?LET(Body, http_eqc_encoding:body(StatusLine),
 	      {StatusLine, http_eqc_encoding:add_content_length(Headers, Body),
+	       Cookies, Body})).
+
+valid_http_chunked_message() ->
+    ?LET({StatusLine, Headers, Cookies},
+	 {http_eqc_gen:status_line(), http_eqc_gen:headers(),
+	  list(http_eqc_gen:set_cookie())},
+	 ?LET(Body, http_eqc_gen:chunked_body(),
+	      {StatusLine, http_eqc_encoding:add_transfer_encoding(
+			     Headers, <<"chunked">>),
 	       Cookies, Body})).
 
 %%==============================================================================
@@ -35,30 +45,41 @@ prop_http_response_keep_alive() ->
     %% Connection stays open after send the response
     prop_http_response(keepalive).
 
+prop_chunked_http_response_keep_alive() ->
+    %% Connection stays open after send the response
+    prop_chunked_http_response(keepalive).
+
 prop_http_response(ConnectionState) ->
     eqc:numtests(
       500,
-      ?FORALL({StatusLine, Headers, Cookies, Body},
-	      valid_http_message(),
-	      begin
-		  Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
-		  L = {_, _, Socket} =
-		      test_utils:start_listener({fragmented, Msg}, ConnectionState),
-		  test_utils:send_message(Socket),
-		  Recv = fusco_protocol:recv(Socket, false),
-		  test_utils:stop_listener(L),
-		  Expected = expected_output(StatusLine, Headers, Cookies, Body, Msg),
-		  Cleared = clear_record(clear_connection(Recv)),
-		  ?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
-				      " ~p~nCleared: ~p~nExpected: ~p~n",
-				      [binary:list_to_bin(Msg), Recv, Cleared, Expected]),
-			    case Cleared of
-				Expected ->
-				    true;
-				_ ->
-				    false
-			    end)
-	      end)).
+      ?FORALL(ValidMessage, valid_http_message(),
+	      decode_valid_message(ConnectionState, ValidMessage))).
+
+decode_valid_message(ConnectionState, {StatusLine, Headers, Cookies, Body}) ->
+    Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
+    io:format("MESSAGE ~p~n", [Msg]),
+    L = {_, _, Socket} =
+	test_utils:start_listener({fragmented, Msg}, ConnectionState),
+    test_utils:send_message(Socket),
+    Recv = fusco_protocol:recv(Socket, false),
+    test_utils:stop_listener(L),
+    Expected = expected_output(StatusLine, Headers, Cookies, Body, Msg),
+    Cleared = clear_record(clear_connection(Recv)),
+    ?WHENFAIL(io:format("Message:~n=======~n~s~n=======~nResponse:"
+			" ~p~nCleared: ~p~nExpected: ~p~n",
+			[binary:list_to_bin(Msg), Recv, Cleared, Expected]),
+	      case Cleared of
+		  Expected ->
+		      true;
+		  _ ->
+		      false
+	      end).
+
+prop_chunked_http_response(ConnectionState) ->
+    eqc:numtests(
+      500,
+      ?FORALL(ValidMessage, valid_http_chunked_message(),
+	      decode_valid_message(ConnectionState, ValidMessage))).
 
 %%==============================================================================
 %% Internal functions
@@ -67,13 +88,23 @@ build_valid_message({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body) -
     SL = [HttpVersion, sp(), StatusCode, sp(), Reason, crlf()],
     HS = [[Name, colon(), Value, crlf()] || {Name, Value} <- Headers],
     CS = [[Name, colon(), build_cookie(Cookie), crlf()] || {Name, Cookie} <- Cookies],
-    [SL, HS ++ CS, crlf(), Body]. 
+    [SL, HS ++ CS, crlf(), build_body(Body)]. 
+
+build_body(Body) when is_binary(Body) ->
+    Body;
+build_body(List) ->
+    list_to_binary(
+      io_lib:format("~s0\r\n\r\n",
+		    [[io_lib:format("~s\r\n~s\r\n",
+				    [erlang:integer_to_list(Nat, 16), Body])
+		      || {Nat, Body} <- List]])).
 
 expected_output({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body, Msg) ->
+    io:format("Body ~p~nExpected~p~n", [Body, expected_body(Body)]),
     Version = http_version(HttpVersion),
     OCookies = [{Name, list_to_binary(build_cookie(Cookie))} || {Name, Cookie} <- Cookies],
     LowerHeaders = lists:reverse(headers_to_lower(Headers ++ OCookies)),
-    CookiesRec = output_cookies(Cookies),
+    CookiesRec = output_cookies(Cookies),    
     #response{version = Version,
 	      status_code = StatusCode,
 	      reason = Reason,
@@ -81,11 +112,21 @@ expected_output({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body, Msg) 
 	      headers = LowerHeaders,
 	      connection = to_lower(proplists:get_value(<<"connection">>,
 							LowerHeaders)),
-	      body = Body,
-	      content_length = byte_size(Body),
+	      body = expected_body(Body),
+	      content_length = content_length(Body),
 	      transfer_encoding = to_lower(proplists:get_value(<<"transfer-encoding">>,
 							       LowerHeaders)),
 	      size = byte_size(list_to_binary(Msg))}.
+
+expected_body(Body) when is_binary(Body) ->
+    Body;
+expected_body(List) ->
+    list_to_binary([Bin || {_, Bin} <- List]).
+
+content_length(Body) when is_binary(Body) ->
+    byte_size(Body);
+content_length(_) ->
+    0.
 
 output_cookies(Cookies) ->
     output_cookies(Cookies, []).

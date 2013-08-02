@@ -11,7 +11,8 @@
 
 all() ->
     [prop_http_response_close_connection,
-     prop_http_response_keep_alive].
+     prop_http_response_keep_alive,
+     prop_chunked_http_response_keep_alive].
 
 %%==============================================================================
 %% Test cases
@@ -21,6 +22,9 @@ prop_http_response_close_connection(_) ->
 
 prop_http_response_keep_alive(_) ->
     do_prop(prop_http_response_keep_alive).
+
+prop_chunked_http_response_keep_alive(_) ->
+    do_prop(prop_chunked_http_response_keep_alive).
 
 %%==============================================================================
 %% Internal functions
