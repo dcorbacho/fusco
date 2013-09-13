@@ -11,7 +11,9 @@
 -copyright("2013, Erlang Solutions Ltd.").
 
 %exported functions
--export([connect/2,
+-export([start/2,
+	 start_link/2,
+	 connect/1,
 	 request/6,
 	 request/7,
          disconnect/1]).
@@ -54,13 +56,20 @@
 %%==============================================================================
 %% Exported functions
 %%==============================================================================
+start(Destination, Options) ->
+    verify_options(Options),
+    gen_server:start(?MODULE, {Destination, Options}, []).
+
+start_link(Destination, Options) ->
+    verify_options(Options),
+    gen_server:start_link(?MODULE, {Destination, Options}, []).
+
 %%------------------------------------------------------------------------------
 %% @doc Starts a Client.
 %% @end
 %%------------------------------------------------------------------------------
-connect(Destination, Options) ->
-    verify_options(Options),
-    gen_server:start(?MODULE, {Destination, Options}, []).
+connect(Client) ->
+    gen_server:call(Client, connect).
 
 %%------------------------------------------------------------------------------
 %% @doc Stops a Client.
@@ -218,19 +227,23 @@ init({Destination, Options}) ->
 			  host_header = fusco_lib:host_header(Host, Port),
 			  proxy = Proxy,
 			  proxy_ssl_options = ProxySsl},
-    %% Get a socket or exit
-    case connect_socket(State) of
-        {ok, NewState} ->
-            {ok, NewState};
-        {{error, Reason}, _} ->
-            {stop, Reason}
-    end.
+    {ok, State}.
 
 %%------------------------------------------------------------------------------
 %% @doc This function fills in the Client record used in the requests and obtains
 %% the socket.
 %% @end
 %%------------------------------------------------------------------------------
+handle_call(connect, _From, #client_state{socket = undefined} = State) ->
+    % if we dont get a keep alive from the previous request, the socket is undefined.
+    case connect_socket(State) of
+        {ok, NewState} ->
+	    {reply, ok, NewState};
+        {Error, NewState} ->
+            {reply, Error, NewState}
+    end;
+handle_call(connect, _From, State) ->
+    {reply, ok, State};
 handle_call({request, Path, Method, Hdrs, Body, SendRetry}, From,
             State = #client_state{host_header = Host,
                                   cookies = Cookies,

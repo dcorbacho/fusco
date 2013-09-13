@@ -48,7 +48,7 @@ prop_http_request_per_family(Host, Family, Ssl) ->
 		  Module = select_module(Ssl),
 		  {ok, Listener, LS, Port} =
 		      webserver:start(Module, [validate_msg(Msg)], Family),
-		  {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
+		  {ok, Client} = fusco:start({Host, Port, Ssl}, []),
 		  {ok, {Status, _, _, _, _}}
 		      = fusco:request(Client, Uri, Method, Headers, Body, 10000), 
 		  ok = fusco:disconnect(Client),
@@ -76,7 +76,7 @@ prop_persistent_connection_per_family(Host, Family, Ssl) ->
 	       webserver:start(Module,
 			       [reply_msg(?TWO_OK(ConHeader)) || {_, ConHeader} <- Msgs],
 			       Family),
-	   {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
+	   {ok, Client} = fusco:start({Host, Port, Ssl}, []),
 	   Replies = lists:map(fun({{{Method, Uri, _Version}, Headers, Body}, _}) ->
 				       fusco:request(Client, Uri, Method, Headers, Body, 10000)
 			       end, Msgs),
@@ -103,7 +103,7 @@ prop_reconnect_per_family(Host, Family, Ssl) ->
 		 webserver:start(Module,
 				 [reply_and_close_msg(?TWO_OK) || _ <- Msgs],
 				 Family),
-	     {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
+	     {ok, Client} = fusco:start({Host, Port, Ssl}, []),
 	     Replies = lists:map(fun({{Method, Uri, _Version}, Headers, Body}) ->
 					 Hdrs = lists:keydelete(<<"Connection">>, 1, Headers),
 					 fusco:request(Client, Uri, Method, Hdrs, Body, 10000)
@@ -131,7 +131,7 @@ prop_client_close_connection_per_family(Host, Family, Ssl) ->
 		      webserver:start(Module,
 				      [reply_msg_and_check(Id, ?TWO_OK(Connection))],
 				      Family),
-		  {ok, Client} = fusco:connect({Host, Port, Ssl}, []),
+		  {ok, Client} = fusco:start({Host, Port, Ssl}, []),
 		  {ok, {Status, _, _, _, _}}
 		      = fusco:request(Client, Uri, Method, Headers, Body, 10000), 
 		  Closed = receive
@@ -162,7 +162,8 @@ prop_connection_refused_per_family(Host, Family, Ssl) ->
 	  {ok, Listener, LS, Port} =
 	      webserver:start(Module, [reply_msg(<<>>)], Family),
 	  webserver:stop(Module, Listener, LS),
-	  Reply = fusco:connect({Host, Port, Ssl}, []),
+	  {ok, Client} = fusco:start({Host, Port, Ssl}, []),
+	  Reply = fusco:connect(Client),
 	  Expected = {error, econnrefused},
 	  ?WHENFAIL(io:format("Reply: ~p~nExpected: ~p~n",
 			      [Reply, Expected]),
@@ -183,8 +184,6 @@ validate_msg({{_Method, _Uri, _Version}, SentHeaders, SentBody}) ->
 		true ->
 		    Module:send(Socket, ?TWO_OK);
 		false ->
-		    io:format(user, "~nHeaders expected ~p~n Headers got ~p~n",
-			      [SentHeaders, GotHeaders]),
 		    Module:send(Socket, ?FOUR_BAD_REQUEST)
 	    end;
        (Module, Socket, _Request, _GotHeaders, _) ->

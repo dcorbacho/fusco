@@ -70,7 +70,7 @@ get_with_connect_options() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port),
     Options = [{connect_options, [{ip, {127, 0, 0, 1}}, {port, 0}]}],
-    {ok, Client} = fusco:connect(URL, Options),
+    {ok, Client} = fusco:start(URL, Options),
     {ok, Response} = fusco:request(Client, <<"/empty">>, "GET", [], [], 1, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(<<>>, body(Response)).
@@ -78,7 +78,7 @@ get_with_connect_options() ->
 no_content_length() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_length/5]),
     URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
+    {ok, Client} = fusco:start(URL, []),
     {ok, Response} = fusco:request(Client, <<"/no_cl">>, "GET", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
@@ -86,7 +86,7 @@ no_content_length() ->
 no_content_length_1_0() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_content_length_1_0/5]),
     URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
+    {ok, Client} = fusco:start(URL, []),
     {ok, Response} = fusco:request(Client, <<"/no_cl">>, "GET", [], [], 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response)),
     ?assertEqual(list_to_binary(webserver_utils:default_string()), body(Response)).
@@ -97,7 +97,7 @@ no_content_length_1_0() ->
 trailing_space_header() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:trailing_space_header/5]),
     URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
+    {ok, Client} = fusco:start(URL, []),
     {ok, Response} = fusco:request(Client, <<"/no_cl">>, "GET", [], [], 1000),
     Headers = headers(Response),
     ContentLength = fusco_lib:header_value(<<"content-length">>, Headers),
@@ -107,7 +107,7 @@ pre_1_1_server_connection() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:pre_1_1_server/5]),
     URL = url(Port),
     Body = pid_to_list(self()),
-    {ok, Client} = fusco:connect(URL, []),
+    {ok, Client} = fusco:start(URL, []),
     {ok, _} = fusco:request(Client, <<"/close">>, "PUT", [], Body, 1000),
     % Wait for the server to see that socket has been closed.
     % The socket should be closed by us since the server responded with a
@@ -122,7 +122,7 @@ pre_1_1_server_keep_alive() ->
 				   ]),
     URL = url(Port),
     Body = pid_to_list(self()),
-    {ok, Client} = fusco:connect(URL, []),
+    {ok, Client} = fusco:start(URL, []),
     {ok, Response1} = fusco:request(Client, <<"/close">>, "GET", [], [], 1000),
     {ok, Response2} = fusco:request(Client, <<"/close">>, "PUT", [], Body, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
@@ -144,7 +144,7 @@ post_100_continue() ->
         integer_to_list(Y),
         integer_to_list(Z)
     ],
-    {ok, Client} = fusco:connect(URL, []),
+    {ok, Client} = fusco:start(URL, []),
     {ok, Response} = fusco:request(Client, <<"/post">>, "POST", [], Body, 1000),
     {StatusCode, ReasonPhrase} = status(Response),
     ?assertEqual(<<"200">>, StatusCode),
@@ -154,22 +154,22 @@ post_100_continue() ->
 request_timeout() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:very_slow_response/5]),
     URL = url(Port),
-    {ok, Client} = fusco:connect(URL, []),
+    {ok, Client} = fusco:start(URL, []),
     ?assertEqual({error, timeout}, fusco:request(Client, <<"/slow">>, "GET", [], [], 50)).
 
 invalid_options() ->
     URL = url(5050),
     ?assertError({bad_option, bad_option},
-        fusco:connect(URL, [bad_option, {foo, bar}])),
+        fusco:start(URL, [bad_option, {foo, bar}])),
     ?assertError({bad_option, {foo, bar}},
-        fusco:connect(URL, [{foo, bar}, bad_option])).
+        fusco:start(URL, [{foo, bar}, bad_option])).
 
 cookies() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:set_cookie_response/5, fun webserver_utils:expired_cookie_response/5,
             fun webserver_utils:receive_right_cookies/5]),
     URL = url(Port),
     Options = [{use_cookies, true}],
-    {ok, Client} = fusco:connect(URL, Options),
+    {ok, Client} = fusco:start(URL, Options),
     {ok, Response1} = fusco:request(Client, <<"/cookies">>, "GET", [], <<>>, 1000),
     ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
     {ok, Response2} = fusco:request(Client, <<"/cookies">>, "GET", [], <<>>, 1000),
