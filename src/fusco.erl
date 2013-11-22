@@ -513,7 +513,7 @@ is_ipv6_host(Host) ->
 %%------------------------------------------------------------------------------
 connect_socket(State) ->
     case ensure_proxy_tunnel(new_socket(State), State) of
-	{ok, Socket} ->
+	{ok, Socket, _} ->
 	    {ok, State#client_state{socket = Socket}};
 	Error ->
 	    {Error, State}
@@ -536,9 +536,15 @@ new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOpt
     end,
     SocketOptions = [binary, {packet, raw}, {nodelay, true}, {reuseaddr, true},
                      {active, false} | ConnectOptions2],
+    connect(Host, Port, SocketOptions, Timeout, Ssl).
+
+connect(Host, Port, SocketOptions, Timeout, Ssl) ->
+    TimeB = os:timestamp(),
     try fusco_sock:connect(Host, Port, SocketOptions, Timeout, Ssl) of
         {ok, Socket} ->
-            {ok, Socket};
+            TimeA = os:timestamp(),
+            ConnectionTime = timer:now_diff(TimeA, TimeB),
+            {ok, Socket, ConnectionTime};
         {error, etimedout} ->
             %% TCP stack decided to give up
             {error, connect_timeout};
