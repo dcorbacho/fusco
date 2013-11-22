@@ -32,26 +32,27 @@
 -define(HTTP_LINE_END, "\r\n").
 
 -record(client_state, {
-        host :: string(),
-        port = 80 :: port_num(),
-        ssl = false :: boolean(),
-        socket,
-        connect_timeout = 'infinity' :: timeout(),
-        connect_options = [] :: [any()],
-        %% next fields are specific to particular requests
-        request :: iolist() | undefined,
-	connection_header,
-        requester,
-        cookies = [] :: [#fusco_cookie{}],
-        use_cookies = false :: boolean(),
-        %% in case of infinity we read whatever data we can get from
-        %% the wire at that point
-        attempts = 0 :: integer(),
-        proxy :: undefined | #fusco_url{},
-        proxy_ssl_options = [] :: [any()],
-	host_header,
-	out_timestamp
-        }).
+          host :: string(),
+          port = 80 :: port_num(),
+          ssl = false :: boolean(),
+          socket,
+          connect_timeout = 'infinity' :: timeout(),
+          connect_options = [] :: [any()],
+          %% next fields are specific to particular requests
+          request :: iolist() | undefined,
+          connection_header,
+          requester,
+          cookies = [] :: [#fusco_cookie{}],
+          use_cookies = false :: boolean(),
+          %% in case of infinity we read whatever data we can get from
+          %% the wire at that point
+          attempts = 0 :: integer(),
+          proxy :: undefined | #fusco_url{},
+          proxy_ssl_options = [] :: [any()],
+          host_header,
+          out_timestamp,
+          on_connect
+         }).
 
 %%==============================================================================
 %% Exported functions
@@ -202,6 +203,7 @@ init({Destination, Options}) ->
     UseCookies = fusco_lib:get_value(use_cookies, Options, false),
     ProxyInfo = fusco_lib:get_value(proxy, Options, false),
     ProxySsl = fusco_lib:get_value(proxy_ssl_options, Options, []),
+    OnConnectFun = fusco_lib:get_value(on_connect, Options, fun(_) -> ok end),
     {Host, Port, Ssl} = case Destination of
         {H, P, S} ->
             {H, P, S};
@@ -224,9 +226,10 @@ init({Destination, Options}) ->
                           connect_timeout = ConnectTimeout,
                           connect_options = ConnectOptions,
                           use_cookies = UseCookies,
-			  host_header = fusco_lib:host_header(Host, Port),
-			  proxy = Proxy,
-			  proxy_ssl_options = ProxySsl},
+                          host_header = fusco_lib:host_header(Host, Port),
+                          proxy = Proxy,
+                          proxy_ssl_options = ProxySsl,
+                          on_connect = OnConnectFun},
     {ok, State}.
 
 %%------------------------------------------------------------------------------
@@ -513,7 +516,7 @@ is_ipv6_host(Host) ->
 %%------------------------------------------------------------------------------
 connect_socket(State) ->
     case ensure_proxy_tunnel(new_socket(State), State) of
-	{ok, Socket} ->
+	{ok, Socket, _} ->
 	    {ok, State#client_state{socket = Socket}};
 	Error ->
 	    {Error, State}
@@ -524,7 +527,8 @@ connect_socket(State) ->
 %% @doc Creates a new socket using the options included in the client state.
 %% end
 %%------------------------------------------------------------------------------
-new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOptions} = State) ->
+new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOptions,
+                         on_connect = OnConnectFun} = State) ->
     {Host, Port, Ssl} = request_first_destination(State),
     ConnectOptions2 = case (not lists:member(inet, ConnectOptions)) andalso
         (not lists:member(inet6, ConnectOptions)) andalso
@@ -536,9 +540,17 @@ new_socket(#client_state{connect_timeout = Timeout, connect_options = ConnectOpt
     end,
     SocketOptions = [binary, {packet, raw}, {nodelay, true}, {reuseaddr, true},
                      {active, false} | ConnectOptions2],
+    Reply = connect(Host, Port, SocketOptions, Timeout, Ssl),
+    OnConnectFun(Reply),
+    Reply.
+
+connect(Host, Port, SocketOptions, Timeout, Ssl) ->
+    TimeB = os:timestamp(),
     try fusco_sock:connect(Host, Port, SocketOptions, Timeout, Ssl) of
         {ok, Socket} ->
-            {ok, Socket};
+            TimeA = os:timestamp(),
+            ConnectionTime = timer:now_diff(TimeA, TimeB),
+            {ok, Socket, ConnectionTime};
         {error, etimedout} ->
             %% TCP stack decided to give up
             {error, connect_timeout};
@@ -607,6 +619,8 @@ verify_options([{proxy, List} | Options]) when is_list(List) ->
 verify_options([{proxy_ssl_options, List} | Options]) when is_list(List) ->
     verify_options(Options);
 verify_options([{use_cookies, B} | Options]) when is_boolean(B) ->
+    verify_options(Options);
+verify_options([{on_connect, F} | Options]) when is_function(F) ->
     verify_options(Options);
 verify_options([Option | _Rest]) ->
     erlang:error({bad_option, Option});
