@@ -37,7 +37,7 @@ end_per_group(ipv6ssl, _Config) ->
     ok.
 
 apps() ->
-    [crypto, public_key, ssl, fusco].
+    [asn1, crypto, public_key, ssl, fusco].
 
 groups() ->
     [{ipv4, [], all_tests()},

@@ -39,12 +39,13 @@ test_no(N, Tests) ->
 %%% Eunit setup stuff
 
 start_app() ->
-    application:start(crypto),
-    application:start(public_key),
-    ok = application:start(ssl).
+    [application:start(App) || App <- apps()].
+
+apps() ->
+    [crypto, asn1, public_key, ssl].
 
 stop_app(_) ->
-    ok = application:stop(ssl).
+    [application:stop(App) || App <- lists:reverse(apps())].
 
 tcp_test_() ->
     {inorder,
