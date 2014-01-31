@@ -12,7 +12,8 @@
 -compile(export_all).
 
 all() ->
-    [{group, ipv4}, {group, ipv6}, {group, ipv4ssl}, {group, ipv6ssl}].
+    [{group, ipv4}, {group, ipv6}, {group, ipv4ssl}, {group, ipv6ssl},
+     {group, independent}].
 
 init_per_group(ipv4, Config) ->
     [{fusco_parameters, {"127.0.0.1", inet, false}} | Config];
@@ -23,7 +24,9 @@ init_per_group(ipv4ssl, Config) ->
     [{fusco_parameters, {"127.0.0.1", inet, true}} | Config];
 init_per_group(ipv6ssl, Config) ->
     [ok = application:start(App) || App <- apps()],
-    [{fusco_parameters, {"::1", inet6, true}} | Config].
+    [{fusco_parameters, {"::1", inet6, true}} | Config];
+init_per_group(independent, Config) ->
+    [{fusco_parameters, {"127.0.0.1", inet, false}} | Config].
 
 end_per_group(ipv4, _Config) ->
     ok;
@@ -34,6 +37,8 @@ end_per_group(ipv4ssl, _Config) ->
     ok;
 end_per_group(ipv6ssl, _Config) ->
     [application:stop(App) || App <- lists:reverse(apps())],
+    ok;
+end_per_group(independent, _Config) ->
     ok.
 
 apps() ->
@@ -43,11 +48,15 @@ groups() ->
     [{ipv4, [], all_tests()},
      {ipv6, [], all_tests()},
      {ipv4ssl, [], all_tests()},
-     {ipv6ssl, [], all_tests()}].
+     {ipv6ssl, [], all_tests()},
+     {independent, [], independent_tests()}].
 
 all_tests() ->
     [prop_http_request, prop_persistent_connection, prop_reconnect,
      prop_client_close_connection, prop_connection_refused].
+
+independent_tests() ->
+    [prop_http_request_cookie_path].
 
 %%==============================================================================
 %% Test cases
@@ -67,6 +76,8 @@ prop_client_close_connection(Config) ->
 prop_connection_refused(Config) ->
     do_prop(prop_connection_refused_per_family, Config).
 
+prop_http_request_cookie_path(Config) ->
+    do_prop(prop_http_request_cookie_path, Config).
 %%==============================================================================
 %% Internal functions
 %%==============================================================================

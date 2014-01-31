@@ -56,8 +56,7 @@ prop_http_response(ConnectionState) ->
 	      decode_valid_message(ConnectionState, ValidMessage))).
 
 decode_valid_message(ConnectionState, {StatusLine, Headers, Cookies, Body}) ->
-    Msg = build_valid_message(StatusLine, Headers, Cookies, Body),
-    io:format("MESSAGE ~p~n", [Msg]),
+    Msg = http_eqc_encoding:build_valid_response(StatusLine, Headers, Cookies, Body),
     L = {_, _, Socket} =
 	test_utils:start_listener({fragmented, Msg}, ConnectionState),
     test_utils:send_message(Socket),
@@ -84,25 +83,10 @@ prop_chunked_http_response(ConnectionState) ->
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
-build_valid_message({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body) ->
-    SL = [HttpVersion, sp(), StatusCode, sp(), Reason, crlf()],
-    HS = [[Name, colon(), Value, crlf()] || {Name, Value} <- Headers],
-    CS = [[Name, colon(), build_cookie(Cookie), crlf()] || {Name, Cookie} <- Cookies],
-    [SL, HS ++ CS, crlf(), build_body(Body)]. 
-
-build_body(Body) when is_binary(Body) ->
-    Body;
-build_body(List) ->
-    list_to_binary(
-      io_lib:format("~s0\r\n\r\n",
-		    [[io_lib:format("~s\r\n~s\r\n",
-				    [erlang:integer_to_list(Nat, 16), Body])
-		      || {Nat, Body} <- List]])).
-
 expected_output({HttpVersion, StatusCode, Reason}, Headers, Cookies, Body, Msg) ->
-    io:format("Body ~p~nExpected~p~n", [Body, expected_body(Body)]),
     Version = http_version(HttpVersion),
-    OCookies = [{Name, list_to_binary(build_cookie(Cookie))} || {Name, Cookie} <- Cookies],
+    OCookies = [{Name, list_to_binary(http_eqc_encoding:build_cookie(Cookie))}
+                || {Name, Cookie} <- Cookies],
     LowerHeaders = lists:reverse(headers_to_lower(Headers ++ OCookies)),
     CookiesRec = output_cookies(Cookies),    
     #response{version = Version,
@@ -133,7 +117,12 @@ output_cookies(Cookies) ->
 
 output_cookies([{_SetCookie, {{K, V}, Avs}} | Rest], Acc) ->
     MaxAge = output_max_age(proplists:get_value(<<"Max-Age">>, Avs)),
-    Path = proplists:get_value(<<"Path">>, Avs),
+    Path = case proplists:get_value(<<"Path">>, Avs) of
+               Bin when is_binary(Bin) ->
+                   binary:split(Bin, <<"/">>, [global]);
+               undefined ->
+                   undefined
+           end,
     Expires = output_expires(proplists:get_value(<<"Expires">>, Avs)),
     Cookie = #fusco_cookie{name = K, value = V, max_age = MaxAge, path = Path,
 			    expires = Expires},
@@ -179,21 +168,6 @@ clear_connection(Response) when is_record(Response, response) ->
 clear_connection(Error) ->
     Error.
 
-colon() ->
-    <<$:>>.
-
-semicolon() ->
-    <<$;>>.
-
-sp() ->
-    <<$\s>>.
-
-crlf() ->
-    <<$\r,$\n>>.
-
-eq() ->
-    <<$=>>.
-
 http_version(<<"HTTP/1.1">>) ->
     {1, 1};
 http_version(<<"HTTP/1.0">>) ->
@@ -215,42 +189,3 @@ to_lower(undefined) ->
 to_lower(Bin) ->
     list_to_binary(string:to_lower(binary_to_list(Bin))).
 
-build_cookie({{K, V}, Avs}) ->
-    CookiePair = [K, eq(), V],
-    CookieAvs = build_cookie_avs(Avs),
-    CookiePair ++ CookieAvs.
-
-build_cookie_avs(Avs) ->
-    build_cookie_avs(Avs, []).
-    
-build_cookie_avs([{<<"Expires">> = K, {rfc1123date, {Wkday, Date1, Time}}} | Rest], Acc) ->
-    Date = build_date(Date1),
-    BTime = build_time(Time),
-    V = [Wkday, $,, $\s, Date, $\s, BTime, $\s, "GMT"],
-    build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
-build_cookie_avs([{<<"Expires">> = K, {rfc850date, {Weekday, Date2, Time}}} | Rest], Acc) ->
-    Date = build_date(Date2),
-    BTime = build_time(Time),
-    V = [Weekday, $,, $\s, Date, $\s, BTime, $\s, "GMT"],
-    build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
-build_cookie_avs([{<<"Expires">> = K, {asctimedate, {Wkday, Date3, Time, Year}}} | Rest], Acc) ->
-    BTime = build_time(Time),
-    Date = build_date(Date3),
-    V = [Wkday, $\s, Date, $\s, BTime, $\s, Year],
-    build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
-build_cookie_avs([{K, V} | Rest], Acc) ->
-    build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
-build_cookie_avs([K | Rest], Acc) ->
-    build_cookie_avs(Rest, [[semicolon(), sp(), K] | Acc]);
-build_cookie_avs([], Acc) ->
-    Acc.
-
-build_date({date1, {Day, Month, Year}}) ->
-    [Day, $\s, Month, $\s, Year];
-build_date({date2, {Day, Month, Year}}) ->
-    [Day, $-, Month, $-, Year];
-build_date({date3, {Day, Month}}) ->
-    [Month, $\s, Day].
-
-build_time({H, M, S}) ->
-    [H, $:, M, $:, S].

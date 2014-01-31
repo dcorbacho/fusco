@@ -326,11 +326,9 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 	   fun(#fusco_cookie{path = undefined}) ->
 		   true;
 	      (#fusco_cookie{path = CookiePath}) ->
-		   case binary:match(Path, CookiePath) of
-		       {0, _} -> true;
-		       _ -> false
-		   end
-	   end, Cookies)
+               SubPath = binary:split(Path, <<"/">>, [global]),
+               is_prefix(CookiePath, SubPath)
+       end, Cookies)
     of
 	[] ->
 	    Result;
@@ -460,3 +458,13 @@ char_to_lower($X) -> $x;
 char_to_lower($Y) -> $y;
 char_to_lower($Z) -> $z;
 char_to_lower(Ch) -> Ch.
+
+is_prefix([H | T1], [H | T2]) ->
+    is_prefix(T1, T2);
+is_prefix([], _) ->
+    true;
+is_prefix(_, []) ->
+    false;
+is_prefix(_, _) ->
+    false.
+

@@ -21,10 +21,11 @@
 		   end).
 
 -export([prop_http_request_per_family/3,
-	 prop_persistent_connection_per_family/3,
-	 prop_reconnect_per_family/3,
-	 prop_client_close_connection_per_family/3,
-	 prop_connection_refused_per_family/3]).
+         prop_persistent_connection_per_family/3,
+         prop_reconnect_per_family/3,
+         prop_client_close_connection_per_family/3,
+         prop_connection_refused_per_family/3,
+         prop_http_request_cookie_path/3]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -35,6 +36,47 @@ valid_http_request() ->
 	 ?LET(Body, http_eqc_encoding:body(any),
 	      {RequestLine, http_eqc_encoding:add_content_length(Headers, Body),
 	       Body})).
+
+valid_http_response() ->
+    ?LET({StatusLine, Headers},
+         {status_line(), http_eqc_gen:headers()},
+         ?LET(Body, http_eqc_encoding:body(StatusLine),
+              {StatusLine, Headers, Body}
+             )
+        ).
+
+status_line() ->
+    %% Discard CONTINUE for cookie testing, client waits for next messages
+    ?SUCHTHAT({_, S, _}, http_eqc_gen:status_line(),
+              not lists:member(S, [<<"100">>, <<"101">>])).
+
+token() ->
+    non_empty(list(choose($A, $z))).
+
+path() ->
+    non_empty(list(token())).
+
+subpath(Path, true) ->
+    ?LET(Length, choose(1, length(Path)),
+         begin
+             {H, _} = lists:split(Length, Path),
+             H
+         end);
+subpath(Path, false) ->
+    ?SUCHTHAT(SubPath, path(), hd(SubPath) =/= hd(Path)).
+
+set_cookie(Path) ->
+    {<<"Set-Cookie">>, {http_eqc_gen:cookie_pair(),
+                        [{<<"Path">>, encode_path(Path)}]}}.
+
+path_cookie() ->
+    ?LET({Path, IsSubPath}, {path(), bool()},
+         ?LET(SubPath, subpath(Path, IsSubPath),
+              ?LET(Cookie, set_cookie(SubPath),
+                   {Cookie, encode_path(Path), IsSubPath}
+                  )
+             )
+        ).
 
 %%==============================================================================
 %% Quickcheck properties
@@ -175,6 +217,27 @@ prop_connection_refused_per_family(Host, Family, Ssl) ->
 		    end)
       end).
 
+prop_http_request_cookie_path(Host, Family, Ssl) ->
+    ?FORALL(
+       {Request, {Cookie, Path, IsSubPath},
+        {{_, Status, Reason}, _, _} = Response},
+       {valid_http_request(), path_cookie(), valid_http_response()},
+       begin
+           ResponseBin = build_response(Response, [Cookie]),
+           ValidationFun = validate_cookie_path_msg(ResponseBin, Path,
+                                                    IsSubPath, Cookie),
+           {FirstResponse, SecondResponse} =
+               send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request),
+           Expected = {Status, Reason},
+           ?WHENFAIL(io:format("FirstResponse: ~p~nExpected:"
+                               " ~p~nSecondResponse ~p~n",
+                               [FirstResponse, Expected, SecondResponse]),
+                     (FirstResponse == Expected)
+                     and (SecondResponse == {<<"200">>, <<"OK">>})
+                    )
+       end
+      ).
+
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
@@ -189,6 +252,26 @@ validate_msg({{_Method, _Uri, _Version}, SentHeaders, SentBody}) ->
        (Module, Socket, _Request, _GotHeaders, _) ->
 	    Module:send(Socket, ?FOUR_BAD_REQUEST) 
     end.
+
+validate_cookie_path_msg(Response, Path, IsSubPath, Cookie) ->
+    SPath = binary_to_list(Path),
+    fun(Module, Socket, {http_request, _, "original", _}, _Headers, _Body) ->
+            Module:send(Socket, Response);
+       (Module, Socket, {http_request, _, {abs_path, RPath}, _}, Headers, _Body)
+          when SPath == RPath ->
+            case check_cookie_path(Headers, IsSubPath, Cookie) of
+                true ->
+                    Module:send(Socket, ?TWO_OK);
+                false ->
+                    Module:send(Socket, ?FOUR_BAD_REQUEST)
+            end
+    end.
+
+check_cookie_path(Headers, true, {_, {{A, B}, _}}) ->
+    binary_to_list(<<A/binary,"=",B/binary>>)
+        == proplists:get_value("Cookie", Headers);
+check_cookie_path(Headers, false, _) ->
+    undefined == proplists:get_value("Cookie", Headers).
 
 verify_host(GotHeaders, SentHeaders) ->
     %% Host must be added by the client if it is not part of the headers list
@@ -289,3 +372,26 @@ select_module(Ssl) ->
 	false ->
 	    gen_tcp
     end.
+
+encode_path(Path) ->
+    list_to_binary(["/", string:join(Path, "/")]).
+
+build_response({StatusLine, Headers, Body}, Cookies) ->
+    http_eqc_encoding:build_valid_response(
+      StatusLine,
+      http_eqc_encoding:add_content_length(Headers, Body),
+      Cookies, Body).
+
+send_cookie_requests(Host, Ssl, Family, ValidationFun, Path,
+                     {{Method, _Uri, _Version}, Headers, Body}) ->
+    Module = select_module(Ssl),
+    {ok, Listener, LS, Port} =
+        webserver:start(Module, [ValidationFun], Family),
+    {ok, Client} = fusco:start({Host, Port, Ssl}, [{use_cookies, true}]),
+    {ok, {FirstResponse, _, _, _, _}}
+        = fusco:request(Client, <<"original">>, Method, Headers, Body, 10000), 
+    {ok, {SecondResponse, _, _, _, _}}
+        = fusco:request(Client, Path, Method, Headers, Body, 10000), 
+    ok = fusco:disconnect(Client),
+    webserver:stop(Module, Listener, LS),
+    {FirstResponse, SecondResponse}.

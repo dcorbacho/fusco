@@ -380,13 +380,14 @@ decode_cookie_av(<<>>, Co, _AV) ->
     ignore_cookie_av(<<>>, Co).
 
 decode_cookie_av_value(<<>>, Co, <<"path">>, Value) ->
-    Co#fusco_cookie{path = Value};
+    Co#fusco_cookie{path = binary:split(Value, <<"/">>, [global])};
 decode_cookie_av_value(<<>>, Co, <<"max-age">>, Value) ->
     Co#fusco_cookie{max_age = max_age(Value)};
 decode_cookie_av_value(<<>>, Co, <<"expires">>, Value) ->
     Co#fusco_cookie{expires = expires(Value)};
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"path">>, Value) ->
-    decode_cookie_av_ws(Rest, Co#fusco_cookie{path = Value});
+    Path = binary:split(Value, <<"/">>, [global]),
+    decode_cookie_av_ws(Rest, Co#fusco_cookie{path = Path});
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"max-age">>, Value) ->
     decode_cookie_av_ws(Rest, Co#fusco_cookie{
 				max_age = max_age(Value)});
