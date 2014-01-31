@@ -102,13 +102,10 @@ update_cookies(ReceivedCookies, [], InTimestamp) ->
 update_cookies(ReceivedCookies, StateCookies, InTimestamp) ->
     %% substitute the cookies with the same name, add the others, delete.
     Substituted =
-    	lists:foldl(fun(X = #fusco_cookie{value = <<"deleted">>}, Acc) ->
-			    lists:keydelete(X#fusco_cookie.name,
-					    #fusco_cookie.name, Acc);
-		       (X, Acc) ->
-    			    lists:keystore(X#fusco_cookie.name,
-					   #fusco_cookie.name, Acc, X)
-    		    end, StateCookies, ReceivedCookies),
+    	lists:foldl(fun(X, Acc) ->
+                            lists:keystore(X#fusco_cookie.name,
+                                           #fusco_cookie.name, Acc, X)
+                    end, StateCookies, ReceivedCookies),
     %% Delete the cookies that are expired (check max-age and expire fields).
     delete_expired_cookies(Substituted, InTimestamp).
 
