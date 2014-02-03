@@ -38,7 +38,8 @@
           value :: binary(),
           expires :: {{integer(), integer(), integer()},
                       {integer(), integer(), integer()}} | atom(),
-          path :: [binary()],
+          path :: binary(),
+          path_tokens :: [binary()],
           max_age :: integer() | atom(),
           domain :: binary()
          }).

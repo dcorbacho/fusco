@@ -117,15 +117,18 @@ output_cookies(Cookies) ->
 
 output_cookies([{_SetCookie, {{K, V}, Avs}} | Rest], Acc) ->
     MaxAge = output_max_age(proplists:get_value(<<"Max-Age">>, Avs)),
-    Path = case proplists:get_value(<<"Path">>, Avs) of
-               Bin when is_binary(Bin) ->
-                   binary:split(Bin, <<"/">>, [global]);
-               undefined ->
-                   undefined
-           end,
+    Path = proplists:get_value(<<"Path">>, Avs),
+    PathTokens = case Path of
+                     Bin when is_binary(Bin) ->
+                         binary:split(Bin, <<"/">>, [global]);
+                     undefined ->
+                         undefined
+                 end,
     Expires = output_expires(proplists:get_value(<<"Expires">>, Avs)),
     Cookie = #fusco_cookie{name = K, value = V, max_age = MaxAge, path = Path,
-			    expires = Expires},
+                           path_tokens = PathTokens,
+                           expires = Expires,
+                           domain = proplists:get_value(<<"Domain">>, Avs)},
     output_cookies(Rest, [Cookie | Acc]);
 output_cookies([], Acc) ->
     Acc.

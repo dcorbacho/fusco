@@ -340,9 +340,9 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
     %% see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
     %% TODO optimize cookie handling
     case lists:filter(
-	   fun(#fusco_cookie{path = undefined}) ->
+	   fun(#fusco_cookie{path_tokens = undefined}) ->
 		   true;
-	      (#fusco_cookie{path = CookiePath}) ->
+	      (#fusco_cookie{path_tokens = CookiePath}) ->
                SubPath = binary:split(Path, <<"/">>, [global]),
                is_prefix(CookiePath, SubPath)
        end, Cookies)
@@ -363,8 +363,19 @@ add_cookie_headers(Hdrs, Cookies) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-cookie_string(#fusco_cookie{name = Name, value = Value}) ->
-    [Name, <<"=">>, Value].
+cookie_string(#fusco_cookie{name = Name, value = Value, path = undefined,
+                            domain = undefined}) ->
+    [Name, <<"=">>, Value];
+cookie_string(#fusco_cookie{name = Name, value = Value, path = Path,
+                            domain = undefined}) ->
+    [Name, <<"=">>, Value, <<"; ">>, <<"Path=">>, Path];
+cookie_string(#fusco_cookie{name = Name, value = Value, path = undefined,
+                            domain = Domain}) ->
+    [Name, <<"=">>, Value, <<"; ">>, <<"Domain=">>, Domain];
+cookie_string(#fusco_cookie{name = Name, value = Value, path = Path,
+                            domain = Domain}) ->
+    [Name, <<"=">>, Value, <<"; ">>, <<"Path=">>, Path, <<"; ">>,
+     <<"Domain=">>, Domain].
 
 
 %%------------------------------------------------------------------------------

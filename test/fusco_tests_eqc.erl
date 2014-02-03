@@ -298,8 +298,8 @@ prop_http_request_supersede_cookie(Host, Family, Ssl) ->
               SecondServerResponse = build_response(Response, [SecondCookie]),
               ValidationFun = validate_cookie_supersede(
                                 FirstServerResponse, SecondServerResponse,
-                                Supersede, {Name, Value, Path},
-                                {SName, SValue, SPath}),
+                                Supersede, {Name, Value, encode_path(Path), Domain},
+                                {SName, SValue, encode_path(SPath), SDomain}),
               %% Three requests to supersede the value
               %% First get cookie
               %% Second get second cookie
@@ -367,22 +367,36 @@ validate_cookie_supersede(FirstResponse, SecondResponse, Supersede, FirstPair,
             end
     end.
 
-check_cookie_path(Headers, true, {_, {{A, B}, _}}) ->
-    binary_to_list(<<A/binary,"=",B/binary>>)
-        == proplists:get_value("Cookie", Headers);
+build_tokens(N, V, P) ->
+    [binary_to_list(<<N/binary,"=",V/binary>>),
+     binary_to_list(<<"Path=",P/binary>>)].
+
+check_cookie_path(Headers, true, {_, {{N, V}, [{_, P}]}}) ->
+    [build_tokens(N, V, P)] == get_cookies_split_in_tokens(Headers);
 check_cookie_path(Headers, false, _) ->
     undefined == proplists:get_value("Cookie", Headers).
 
-check_cookie_supersede(Headers, true, {Name, _, _}, {_, NewValue, _}) ->
-    [binary_to_list(<<Name/binary,"=",NewValue/binary>>)]
-        == proplists:get_all_values("Cookie", Headers);
-check_cookie_supersede(Headers, false, {Name, Value, Path}, {NewName, NewValue, Path}) ->
-    lists:sort([binary_to_list(<<Name/binary,"=",Value/binary>>),
-                binary_to_list(<<NewName/binary,"=",NewValue/binary>>)])
-        == lists:sort(proplists:get_all_values("Cookie", Headers));
-check_cookie_supersede(Headers, false, {Name, Value, _}, _) ->
-    [binary_to_list(<<Name/binary,"=",Value/binary>>)]
-        == proplists:get_all_values("Cookie", Headers).
+build_tokens(N, V, P, D) ->
+    build_tokens(N, V, P) ++ [binary_to_list(<<"Domain=",D/binary>>)].
+
+get_cookies_split_in_tokens(Headers) ->
+    %% Splits each cookie in subcomponents: Name=Value, Path=path, Domain=domain
+    lists:sort(
+      [string:tokens(C, "; ")
+       || C <- proplists:get_all_values("Cookie", Headers)]).
+
+%% See http://www.ietf.org/rfc/rfc2109.txt section-4.3.4
+check_cookie_supersede(Headers, true, {Name, _, Path, Domain}, {_, NewValue, _, _}) ->
+    [build_tokens(Name, NewValue, Path, Domain)]
+        == get_cookies_split_in_tokens(Headers);
+check_cookie_supersede(Headers, false, {Name, Value, Path, Domain},
+                       {NewName, NewValue, Path, NewDomain}) ->
+    lists:sort([build_tokens(Name, Value, Path, Domain),
+                build_tokens(NewName, NewValue, Path, NewDomain)])
+        == get_cookies_split_in_tokens(Headers);
+check_cookie_supersede(Headers, false, {Name, Value, Path, Domain}, _) ->
+    [build_tokens(Name, Value, Path, Domain)]
+        == get_cookies_split_in_tokens(Headers).
 
 verify_host(GotHeaders, SentHeaders) ->
     %% Host must be added by the client if it is not part of the headers list

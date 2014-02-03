@@ -64,9 +64,6 @@ tcp_test_() ->
 options_test() ->
     invalid_options().
 
-cookies_test() ->
-    cookies().
-
 get_with_connect_options() ->
     {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:empty_body/5]),
     URL = url(Port),
@@ -164,19 +161,6 @@ invalid_options() ->
         fusco:start(URL, [bad_option, {foo, bar}])),
     ?assertError({bad_option, {foo, bar}},
         fusco:start(URL, [{foo, bar}, bad_option])).
-
-cookies() ->
-    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:set_cookie_response/5, fun webserver_utils:expired_cookie_response/5,
-            fun webserver_utils:receive_right_cookies/5]),
-    URL = url(Port),
-    Options = [{use_cookies, true}],
-    {ok, Client} = fusco:start(URL, Options),
-    {ok, Response1} = fusco:request(Client, <<"/cookies">>, "GET", [], <<>>, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response1)),
-    {ok, Response2} = fusco:request(Client, <<"/cookies">>, "GET", [], <<>>, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response2)),
-    {ok, Response3} = fusco:request(Client, <<"/cookies">>, "GET", [], <<>>, 1000),
-    ?assertEqual({<<"200">>, <<"OK">>}, status(Response3)).
 
 url(Port) ->
     url(inet, Port).
