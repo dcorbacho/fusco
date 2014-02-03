@@ -34,13 +34,14 @@
 }).
 
 -record(fusco_cookie, {
-	  name :: binary(),
-	  value :: binary(),
-	  expires :: {{integer(), integer(), integer()},
-				{integer(), integer(), integer()}} | atom(),
-	  path :: [binary()],
-	  max_age :: integer() | atom()
-	 }).
+          name :: binary(),
+          value :: binary(),
+          expires :: {{integer(), integer(), integer()},
+                      {integer(), integer(), integer()}} | atom(),
+          path :: [binary()],
+          max_age :: integer() | atom(),
+          domain :: binary()
+         }).
 
 -record(response, {socket,
 		   ssl,

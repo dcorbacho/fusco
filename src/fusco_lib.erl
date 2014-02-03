@@ -101,14 +101,34 @@ update_cookies(ReceivedCookies, [], InTimestamp) ->
     delete_expired_cookies(ReceivedCookies, InTimestamp);
 update_cookies(ReceivedCookies, StateCookies, InTimestamp) ->
     %% substitute the cookies with the same name, add the others, delete.
+    %% RFC2109 - section 4.3.3
+    %% If a user agent receives a Set-Cookie response header whose NAME is
+    %% the same as a pre-existing cookie, and whose Domain and Path
+    %% attribute values exactly (string) match those of a pre-existing
+    %% cookie, the new cookie supersedes the old.
     Substituted =
-    	lists:foldl(fun(X, Acc) ->
-                            lists:keystore(X#fusco_cookie.name,
-                                           #fusco_cookie.name, Acc, X)
+        lists:foldl(fun(NewCookie, Acc) ->
+                            OldCookie =
+                                lists:keyfind(NewCookie#fusco_cookie.name,
+                                              #fusco_cookie.name, Acc),
+                            replace_or_add_cookie(OldCookie, NewCookie, Acc)
                     end, StateCookies, ReceivedCookies),
     %% Delete the cookies that are expired (check max-age and expire fields).
     delete_expired_cookies(Substituted, InTimestamp).
 
+%% RFC2109 - section 4.3.3
+replace_or_add_cookie(false, NewCookie, List) ->
+    %% Add new cookie
+    [NewCookie | List];
+replace_or_add_cookie(#fusco_cookie{domain = Domain, path = Path},
+                      #fusco_cookie{domain = Domain,
+                                    path = Path} = NewCookie, List) ->
+    %% Replace previous cookie
+    lists:keystore(NewCookie#fusco_cookie.name, #fusco_cookie.name, List,
+                   NewCookie);
+replace_or_add_cookie(_, NewCookie, List) ->
+    %% Add new cookie, path and/or domain are different
+    [NewCookie | List].
 
 %%------------------------------------------------------------------------------
 %% @doc Converts characters in a string ro lower case.
@@ -337,24 +357,15 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 %% @private
 %%------------------------------------------------------------------------------
 add_cookie_headers(Hdrs, Cookies) ->
-    [[<<"Cookie: ">>, make_cookie_string(Cookies, []), ?HTTP_LINE_END]
+    [[[<<"Cookie: ">>, cookie_string(Cookie), ?HTTP_LINE_END] || Cookie <- Cookies]
      | Hdrs].
-
-%%------------------------------------------------------------------------------
-%% @private
-%%------------------------------------------------------------------------------
-make_cookie_string([], Acc) ->
-    Acc;
-make_cookie_string([Cookie | Rest], []) ->
-    make_cookie_string(Rest, cookie_string(Cookie));
-make_cookie_string([Cookie | Rest], Acc) ->
-    make_cookie_string(Rest,  [cookie_string(Cookie), "; " | Acc]).
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
 cookie_string(#fusco_cookie{name = Name, value = Value}) ->
     [Name, <<"=">>, Value].
+
 
 %%------------------------------------------------------------------------------
 %% @private

@@ -25,7 +25,8 @@
          prop_reconnect_per_family/3,
          prop_client_close_connection_per_family/3,
          prop_connection_refused_per_family/3,
-         prop_http_request_cookie_path/3]).
+         prop_http_request_cookie_path/3,
+         prop_http_request_supersede_cookie/3]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -56,6 +57,9 @@ token() ->
 path() ->
     non_empty(list(token())).
 
+domain() ->
+    ?LET(Domain, path(), list_to_binary(string:join(Domain, "."))).
+
 subpath(Path, true) ->
     ?LET(Length, choose(1, length(Path)),
          begin
@@ -69,7 +73,9 @@ set_cookie(Path) ->
     {<<"Set-Cookie">>, {http_eqc_gen:cookie_pair(),
                         [{<<"Path">>, encode_path(Path)}]}}.
 
-path_cookie() ->
+cookie_path() ->
+    %% Cookie rejected if the value for the Path attribute
+    %% is not a prefix of the requested-URI
     ?LET({Path, IsSubPath}, {path(), bool()},
          ?LET(SubPath, subpath(Path, IsSubPath),
               ?LET(Cookie, set_cookie(SubPath),
@@ -77,6 +83,37 @@ path_cookie() ->
                   )
              )
         ).
+
+set_cookie(Path, Domain, Name, Value) ->
+    {<<"Set-Cookie">>, {{Name, Value}, [{<<"Path">>, encode_path(Path)},
+                                        {<<"Domain">>, Domain}]}}.
+
+maybe_different_cookie_data(true, Path, Domain, Name) ->
+    {Path, Domain, Name};
+maybe_different_cookie_data(false, Path, Domain, Name) ->
+    %% Generates a combination of 1 or more mutations on Path, Domain and Name
+    ?LET([ChangePath, ChangeDomain, ChangeName],
+         ?SUCHTHAT(V, vector(3, bool()),
+                   lists:any(fun(X) -> X == true end, V)),
+         {change_path(ChangePath, Path),
+          change_domain(ChangeDomain, Domain),
+          change_name(ChangeName, Name)}
+        ).
+
+change_path(false, Path) ->
+    Path;
+change_path(true, Path) ->
+    ?SUCHTHAT(P, path(), hd(P) =/= hd(Path)).
+
+change_domain(false, Domain) ->
+    Domain;
+change_domain(true, Domain) ->
+    ?SUCHTHAT(D, domain(), D =/= Domain).
+
+change_name(false, Name) ->
+    Name;
+change_name(true, Name) ->
+    ?SUCHTHAT(N, http_eqc_gen:small_valid_bin(), N =/= Name).
 
 %%==============================================================================
 %% Quickcheck properties
@@ -217,17 +254,19 @@ prop_connection_refused_per_family(Host, Family, Ssl) ->
 		    end)
       end).
 
+%% Cookie rejected if the value for the Path attribute
+%% is not a prefix of the requested-URI
 prop_http_request_cookie_path(Host, Family, Ssl) ->
     ?FORALL(
        {Request, {Cookie, Path, IsSubPath},
         {{_, Status, Reason}, _, _} = Response},
-       {valid_http_request(), path_cookie(), valid_http_response()},
+       {valid_http_request(), cookie_path(), valid_http_response()},
        begin
            ResponseBin = build_response(Response, [Cookie]),
-           ValidationFun = validate_cookie_path_msg(ResponseBin, Path,
-                                                    IsSubPath, Cookie),
-           {FirstResponse, SecondResponse} =
-               send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request),
+           ValidationFun = validate_cookie_path_msg(ResponseBin, IsSubPath, Cookie),
+           [FirstResponse, SecondResponse] =
+               send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request,
+                                    [<<"first">>, <<"second">>]),
            Expected = {Status, Reason},
            ?WHENFAIL(io:format("FirstResponse: ~p~nExpected:"
                                " ~p~nSecondResponse ~p~n",
@@ -238,6 +277,48 @@ prop_http_request_cookie_path(Host, Family, Ssl) ->
        end
       ).
 
+%% Supersed old cookie if Name is the same as existing cookie,
+%% and Domain and Path exactly match pre-existing ones
+prop_http_request_supersede_cookie(Host, Family, Ssl) ->
+    ?FORALL(
+       {Request, Path, Domain, {Name, Value}, Supersede,
+        {{_, Status, Reason}, _, _} = Response},
+       {valid_http_request(), path(), domain(), http_eqc_gen:cookie_pair(),
+        bool(), valid_http_response()},
+       %% Generate a second cookie that could supersed or not the previous one
+       %% Uses 'Supersede' as generation parameter
+       ?LET(
+          {{SPath, SDomain, SName}, SValue},
+          {maybe_different_cookie_data(Supersede, Path, Domain, Name),
+           ?SUCHTHAT(V, http_eqc_gen:small_valid_bin(), V =/= Value)},
+          begin
+              FirstCookie = set_cookie(Path, Domain, Name, Value),
+              SecondCookie = set_cookie(SPath, SDomain, SName, SValue),
+              FirstServerResponse = build_response(Response, [FirstCookie]),
+              SecondServerResponse = build_response(Response, [SecondCookie]),
+              ValidationFun = validate_cookie_supersede(
+                                FirstServerResponse, SecondServerResponse,
+                                Supersede, {Name, Value, Path},
+                                {SName, SValue, SPath}),
+              %% Three requests to supersede the value
+              %% First get cookie
+              %% Second get second cookie
+              %% Third checks received cookies
+              [FirstResponse, SecondResponse, ThirdResponse] =
+                  send_cookie_requests(Host, Ssl, Family, ValidationFun,
+                                       encode_path(Path), Request,
+                                       [<<"first">>, <<"second">>, <<"third">>]),
+              Expected = {Status, Reason},
+              ?WHENFAIL(io:format("FirstResponse: ~p~nSecondResponse:"
+                                  " ~p~nThirdResponse ~p~n",
+                               [FirstResponse, SecondResponse, ThirdResponse]),
+                        (FirstResponse == SecondResponse) and
+                        (FirstResponse == Expected)
+                        and (ThirdResponse == {<<"200">>, <<"OK">>})
+                       )
+          end
+         )
+      ).
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
@@ -253,17 +334,36 @@ validate_msg({{_Method, _Uri, _Version}, SentHeaders, SentBody}) ->
 	    Module:send(Socket, ?FOUR_BAD_REQUEST) 
     end.
 
-validate_cookie_path_msg(Response, Path, IsSubPath, Cookie) ->
-    SPath = binary_to_list(Path),
-    fun(Module, Socket, {http_request, _, "original", _}, _Headers, _Body) ->
-            Module:send(Socket, Response);
-       (Module, Socket, {http_request, _, {abs_path, RPath}, _}, Headers, _Body)
-          when SPath == RPath ->
-            case check_cookie_path(Headers, IsSubPath, Cookie) of
-                true ->
-                    Module:send(Socket, ?TWO_OK);
-                false ->
-                    Module:send(Socket, ?FOUR_BAD_REQUEST)
+validate_cookie_path_msg(Response, IsSubPath, Cookie) ->
+    fun(Module, Socket, _Request, Headers, _Body) ->
+            case proplists:get_value("Test", Headers) of
+                "first" ->
+                    Module:send(Socket, Response);
+                "second" ->
+                    case check_cookie_path(Headers, IsSubPath, Cookie) of
+                        true ->
+                            Module:send(Socket, ?TWO_OK);
+                        false ->
+                            Module:send(Socket, ?FOUR_BAD_REQUEST)
+                    end
+            end
+    end.
+
+validate_cookie_supersede(FirstResponse, SecondResponse, Supersede, FirstPair,
+                          SecondPair) ->
+    fun(Module, Socket, _Request, Headers, _Body) ->
+           case proplists:get_value("Test", Headers) of
+                "first" ->
+                    Module:send(Socket, FirstResponse);
+                "second" ->
+                    Module:send(Socket, SecondResponse);
+                "third" ->
+                    case check_cookie_supersede(Headers, Supersede, FirstPair, SecondPair) of
+                        true ->
+                            Module:send(Socket, ?TWO_OK);
+                        false ->
+                            Module:send(Socket, ?FOUR_BAD_REQUEST)
+                    end
             end
     end.
 
@@ -272,6 +372,17 @@ check_cookie_path(Headers, true, {_, {{A, B}, _}}) ->
         == proplists:get_value("Cookie", Headers);
 check_cookie_path(Headers, false, _) ->
     undefined == proplists:get_value("Cookie", Headers).
+
+check_cookie_supersede(Headers, true, {Name, _, _}, {_, NewValue, _}) ->
+    [binary_to_list(<<Name/binary,"=",NewValue/binary>>)]
+        == proplists:get_all_values("Cookie", Headers);
+check_cookie_supersede(Headers, false, {Name, Value, Path}, {NewName, NewValue, Path}) ->
+    lists:sort([binary_to_list(<<Name/binary,"=",Value/binary>>),
+                binary_to_list(<<NewName/binary,"=",NewValue/binary>>)])
+        == lists:sort(proplists:get_all_values("Cookie", Headers));
+check_cookie_supersede(Headers, false, {Name, Value, _}, _) ->
+    [binary_to_list(<<Name/binary,"=",Value/binary>>)]
+        == proplists:get_all_values("Cookie", Headers).
 
 verify_host(GotHeaders, SentHeaders) ->
     %% Host must be added by the client if it is not part of the headers list
@@ -383,15 +494,21 @@ build_response({StatusLine, Headers, Body}, Cookies) ->
       Cookies, Body).
 
 send_cookie_requests(Host, Ssl, Family, ValidationFun, Path,
-                     {{Method, _Uri, _Version}, Headers, Body}) ->
+                     {{Method, _Uri, _Version}, Headers, Body},
+                     RequestTags) ->
     Module = select_module(Ssl),
     {ok, Listener, LS, Port} =
         webserver:start(Module, [ValidationFun], Family),
     {ok, Client} = fusco:start({Host, Port, Ssl}, [{use_cookies, true}]),
-    {ok, {FirstResponse, _, _, _, _}}
-        = fusco:request(Client, <<"original">>, Method, Headers, Body, 10000), 
-    {ok, {SecondResponse, _, _, _, _}}
-        = fusco:request(Client, Path, Method, Headers, Body, 10000), 
+    %% Use header "test" to distinguish requests in the server side
+    Responses = lists:map(
+                  fun(Header) ->
+                          {ok, {Response, _, _, _, _}}
+                              = fusco:request(Client, Path, Method,
+                                              [{<<"test">>, Header} | Headers],
+                                              Body, 10000), 
+                          Response
+                  end, RequestTags),
     ok = fusco:disconnect(Client),
     webserver:stop(Module, Listener, LS),
-    {FirstResponse, SecondResponse}.
+    Responses.

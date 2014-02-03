@@ -56,7 +56,7 @@ all_tests() ->
      prop_client_close_connection, prop_connection_refused].
 
 independent_tests() ->
-    [prop_http_request_cookie_path].
+    [prop_http_request_cookie_path, prop_http_request_supersede_cookie].
 
 %%==============================================================================
 %% Test cases
@@ -78,6 +78,9 @@ prop_connection_refused(Config) ->
 
 prop_http_request_cookie_path(Config) ->
     do_prop(prop_http_request_cookie_path, Config).
+
+prop_http_request_supersede_cookie(Config) ->
+    do_prop(prop_http_request_supersede_cookie, Config).
 %%==============================================================================
 %% Internal functions
 %%==============================================================================

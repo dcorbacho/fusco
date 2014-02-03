@@ -324,7 +324,7 @@ decode_cookie_av_ws(<<$\s, Rest/bits>>, C) ->
     decode_cookie_av_ws(Rest, C);
 decode_cookie_av_ws(<<$\t, Rest/bits>>, C) ->
     decode_cookie_av_ws(Rest, C);
-%% We are only interested on Expires, Max-Age, Path
+%% We are only interested on Expires, Max-Age, Path, Domain
 decode_cookie_av_ws(<<$e, Rest/bits>>, C) ->
     decode_cookie_av(Rest, C, <<$e>>);
 decode_cookie_av_ws(<<$E, Rest/bits>>, C) ->
@@ -337,6 +337,10 @@ decode_cookie_av_ws(<<$p, Rest/bits>>, C) ->
     decode_cookie_av(Rest, C, <<$p>>);
 decode_cookie_av_ws(<<$P, Rest/bits>>, C) ->
     decode_cookie_av(Rest, C, <<$p>>);
+decode_cookie_av_ws(<<$d, Rest/bits>>, C) ->
+    decode_cookie_av(Rest, C, <<$d>>);
+decode_cookie_av_ws(<<$D, Rest/bits>>, C) ->
+    decode_cookie_av(Rest, C, <<$d>>);
 decode_cookie_av_ws(Rest, C) ->
     ignore_cookie_av(Rest, C).
 
@@ -347,9 +351,15 @@ ignore_cookie_av(<<_, Rest/bits>>, Co) ->
 ignore_cookie_av(<<>>, Co) ->
     Co.
 
-%% Match only uppercase chars on Expires, Max-Age, Path
+%% Match only uppercase chars on Expires, Max-Age, Path, Domain
 decode_cookie_av(<<$=, Rest/bits>>, Co, AV) ->
     decode_cookie_av_value(Rest, Co, AV, <<>>);
+decode_cookie_av(<<$D, Rest/bits>>, Co, AV) ->
+    decode_cookie_av(Rest, Co, <<AV/binary, $d>>);
+decode_cookie_av(<<$O, Rest/bits>>, Co, AV) ->
+    decode_cookie_av(Rest, Co, <<AV/binary, $o>>);
+decode_cookie_av(<<$N, Rest/bits>>, Co, AV) ->
+    decode_cookie_av(Rest, Co, <<AV/binary, $n>>);
 decode_cookie_av(<<$E, Rest/bits>>, Co, AV) ->
     decode_cookie_av(Rest, Co, <<AV/binary, $e>>);
 decode_cookie_av(<<$X, Rest/bits>>, Co, AV) ->
@@ -385,6 +395,8 @@ decode_cookie_av_value(<<>>, Co, <<"max-age">>, Value) ->
     Co#fusco_cookie{max_age = max_age(Value)};
 decode_cookie_av_value(<<>>, Co, <<"expires">>, Value) ->
     Co#fusco_cookie{expires = expires(Value)};
+decode_cookie_av_value(<<>>, Co, <<"domain">>, Value) ->
+    Co#fusco_cookie{domain = Value};
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"path">>, Value) ->
     Path = binary:split(Value, <<"/">>, [global]),
     decode_cookie_av_ws(Rest, Co#fusco_cookie{path = Path});
@@ -394,6 +406,8 @@ decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"max-age">>, Value) ->
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"expires">>, Value) ->
     %% TODO parse expires
     decode_cookie_av_ws(Rest, Co#fusco_cookie{expires = expires(Value)});
+decode_cookie_av_value(<<$;, Rest/bits>>, Co, <<"domain">>, Value) ->
+    decode_cookie_av_ws(Rest, Co#fusco_cookie{domain = Value});
 decode_cookie_av_value(<<$;, Rest/bits>>, Co, _, _) ->
     decode_cookie_av_ws(Rest, Co);
 decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
