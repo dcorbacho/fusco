@@ -356,6 +356,7 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
+%% See syntax http://tools.ietf.org/html/rfc2109#section-4.3.4
 add_cookie_headers(Hdrs, Cookies) ->
     [[[<<"Cookie: ">>, cookie_string(Cookie), ?HTTP_LINE_END] || Cookie <- Cookies]
      | Hdrs].
