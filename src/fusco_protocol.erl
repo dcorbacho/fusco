@@ -483,7 +483,7 @@ return(Body, Response) ->
     Response#response{body = Body}.
 
 max_age(Value) ->
-    list_to_integer(binary_to_list(Value)) * 1000000.
+    binary_to_integer(Value) * 1000000.
 
 %% http://tools.ietf.org/html/rfc2616#section-3.3.1
 %% Supports some non-standard datetime (Tomcat) Tue, 06-Nov-1994 08:49:37 GMT

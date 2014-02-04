@@ -51,6 +51,7 @@
           proxy_ssl_options = [] :: [any()],
           host_header,
           out_timestamp,
+          in_timestamp,
           on_connect
          }).
 
@@ -249,8 +250,8 @@ handle_call(connect, _From, State) ->
     {reply, ok, State};
 handle_call({request, Path, Method, Hdrs, Body, SendRetry}, From,
             State = #client_state{host_header = Host,
-                                  cookies = Cookies,
                                   use_cookies = UseCookies}) ->
+    Cookies = delete_expired_cookies(State),
     {Request, ConHeader} =
 	fusco_lib:format_request(Path, Method, Hdrs, Host, Body, {UseCookies, Cookies}),
     send_request(State#client_state{
@@ -424,15 +425,17 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
 		undefined ->
 		    case UseCookies of
 			true ->
-			    {noreply, State#client_state{socket = undefined,
-							 cookies = fusco_lib:update_cookies(NewCookies, Cookies, In)}};
+                    {noreply, State#client_state{socket = undefined,
+                                                 cookies = fusco_lib:update_cookies(NewCookies, Cookies),
+                                                 in_timestamp = In}};
 			false ->
 			    {noreply, State#client_state{socket = undefined}}
 		    end;
 		_ ->
 		    case UseCookies of
 			true ->
-			    {noreply, State#client_state{cookies = fusco_lib:update_cookies(NewCookies, Cookies, In)}};
+			    {noreply, State#client_state{cookies = fusco_lib:update_cookies(NewCookies, Cookies),
+                                             in_timestamp = In}};
 			_ ->
 			    {noreply, State}
 		    end
@@ -626,3 +629,12 @@ verify_options([Option | _Rest]) ->
     erlang:error({bad_option, Option});
 verify_options([]) ->
     ok.
+
+delete_expired_cookies(#client_state{use_cookies = false}) ->
+    [];
+delete_expired_cookies(#client_state{in_timestamp = undefined,
+                                     cookies = Cookies}) ->
+    Cookies;
+delete_expired_cookies(#client_state{in_timestamp = In,
+                                     cookies = Cookies}) ->
+    fusco_lib:delete_expired_cookies(Cookies, In).

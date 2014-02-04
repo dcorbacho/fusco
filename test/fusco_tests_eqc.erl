@@ -26,7 +26,8 @@
          prop_client_close_connection_per_family/3,
          prop_connection_refused_per_family/3,
          prop_http_request_cookie_path/3,
-         prop_http_request_supersede_cookie/3]).
+         prop_http_request_supersede_cookie/3,
+         prop_http_request_max_age/3]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -69,9 +70,32 @@ subpath(Path, true) ->
 subpath(Path, false) ->
     ?SUCHTHAT(SubPath, path(), hd(SubPath) =/= hd(Path)).
 
+max_age() ->
+    %% Make cookie expire on nat/0 and not expire on largeint/0
+    %% Otherwise, in black box testing we lose the control to make cookie
+    %% expire on values near the current time. It needs unit testing
+    %% to verify the expiration is precise.
+    ?LET({Expires, MaxAge},
+         oneof([{true, nat()}, {false, largeint()}]),
+         case MaxAge of
+             0 ->
+                 {true, MaxAge};
+             _ ->
+                 {Expires, abs(MaxAge)}
+         end).
+
 set_cookie(Path) ->
     {<<"Set-Cookie">>, {http_eqc_gen:cookie_pair(),
                         [{<<"Path">>, encode_path(Path)}]}}.
+
+set_cookie(Path, MaxAge) ->
+    {<<"Set-Cookie">>, {http_eqc_gen:cookie_pair(),
+                        [{<<"Path">>, encode_path(Path)},
+                         {<<"Max-Age">>, integer_to_binary(MaxAge)}]}}.
+
+set_cookie(Path, Domain, Name, Value) ->
+    {<<"Set-Cookie">>, {{Name, Value}, [{<<"Path">>, encode_path(Path)},
+                                        {<<"Domain">>, Domain}]}}.
 
 cookie_path() ->
     %% Cookie rejected if the value for the Path attribute
@@ -84,9 +108,13 @@ cookie_path() ->
              )
         ).
 
-set_cookie(Path, Domain, Name, Value) ->
-    {<<"Set-Cookie">>, {{Name, Value}, [{<<"Path">>, encode_path(Path)},
-                                        {<<"Domain">>, Domain}]}}.
+cookie_max_age() ->
+    %% Path is needed in the test setup to ensure cookie is not rejected
+    ?LET({Path, {Expires, MaxAge}}, {path(), max_age()},
+         ?LET(Cookie, set_cookie(Path, MaxAge),
+              {Cookie, encode_path(Path), Expires, MaxAge}
+             )
+        ).
 
 maybe_different_cookie_data(true, Path, Domain, Name) ->
     {Path, Domain, Name};
@@ -266,7 +294,7 @@ prop_http_request_cookie_path(Host, Family, Ssl) ->
            ValidationFun = validate_cookie_path_msg(ResponseBin, IsSubPath, Cookie),
            [FirstResponse, SecondResponse] =
                send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request,
-                                    [<<"first">>, <<"second">>]),
+                                    [<<"first">>, <<"second">>], 0),
            Expected = {Status, Reason},
            ?WHENFAIL(io:format("FirstResponse: ~p~nExpected:"
                                " ~p~nSecondResponse ~p~n",
@@ -307,7 +335,7 @@ prop_http_request_supersede_cookie(Host, Family, Ssl) ->
               [FirstResponse, SecondResponse, ThirdResponse] =
                   send_cookie_requests(Host, Ssl, Family, ValidationFun,
                                        encode_path(Path), Request,
-                                       [<<"first">>, <<"second">>, <<"third">>]),
+                                       [<<"first">>, <<"second">>, <<"third">>], 0),
               Expected = {Status, Reason},
               ?WHENFAIL(io:format("FirstResponse: ~p~nSecondResponse:"
                                   " ~p~nThirdResponse ~p~n",
@@ -319,6 +347,39 @@ prop_http_request_supersede_cookie(Host, Family, Ssl) ->
           end
          )
       ).
+
+%% Cookie rejected if the value for the Path attribute
+%% is not a prefix of the requested-URI
+prop_http_request_max_age(Host, Family, Ssl) ->
+    eqc:numtests(
+      25,
+      ?FORALL(
+         {Request, {Cookie, Path, Expires, MaxAge},
+          {{_, Status, Reason}, _, _} = Response},
+         {valid_http_request(), cookie_max_age(), valid_http_response()},
+         begin
+             ResponseBin = build_response(Response, [Cookie]),
+             ValidationFun = validate_cookie_max_age(ResponseBin, Expires, Cookie),
+             WaitTime = case Expires of
+                            true ->
+                                MaxAge*1000;
+                            false ->
+                                0
+                        end,
+             [FirstResponse, SecondResponse] =
+                 send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request,
+                                      [<<"first">>, <<"second">>], WaitTime),
+             Expected = {Status, Reason},
+             ?WHENFAIL(io:format("FirstResponse: ~p~nExpected:"
+                                 " ~p~nSecondResponse ~p~n",
+                                 [FirstResponse, Expected, SecondResponse]),
+                       (FirstResponse == Expected)
+                       and (SecondResponse == {<<"200">>, <<"OK">>})
+                      )
+         end
+        )
+     ).
+
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
@@ -341,6 +402,21 @@ validate_cookie_path_msg(Response, IsSubPath, Cookie) ->
                     Module:send(Socket, Response);
                 "second" ->
                     case check_cookie_path(Headers, IsSubPath, Cookie) of
+                        true ->
+                            Module:send(Socket, ?TWO_OK);
+                        false ->
+                            Module:send(Socket, ?FOUR_BAD_REQUEST)
+                    end
+            end
+    end.
+
+validate_cookie_max_age(Response, Expires, Cookie) ->
+    fun(Module, Socket, _Request, Headers, _Body) ->
+            case proplists:get_value("Test", Headers) of
+                "first" ->
+                    Module:send(Socket, Response);
+                "second" ->
+                    case check_cookie_max_age(Headers, Expires, Cookie) of
                         true ->
                             Module:send(Socket, ?TWO_OK);
                         false ->
@@ -375,6 +451,11 @@ check_cookie_path(Headers, true, {_, {{N, V}, [{_, P}]}}) ->
     [build_tokens(N, V, P)] == get_cookies_split_in_tokens(Headers);
 check_cookie_path(Headers, false, _) ->
     undefined == proplists:get_value("Cookie", Headers).
+
+check_cookie_max_age(Headers, true, _) ->
+    undefined == proplists:get_value("Cookie", Headers);
+check_cookie_max_age(Headers, false, {_, {{N, V}, [{_, P} | _]}}) ->
+    [build_tokens(N, V, P)] == get_cookies_split_in_tokens(Headers).    
 
 build_tokens(N, V, P, D) ->
     build_tokens(N, V, P) ++ [binary_to_list(<<"Domain=",D/binary>>)].
@@ -509,7 +590,7 @@ build_response({StatusLine, Headers, Body}, Cookies) ->
 
 send_cookie_requests(Host, Ssl, Family, ValidationFun, Path,
                      {{Method, _Uri, _Version}, Headers, Body},
-                     RequestTags) ->
+                     RequestTags, WaitTime) ->
     Module = select_module(Ssl),
     {ok, Listener, LS, Port} =
         webserver:start(Module, [ValidationFun], Family),
@@ -520,7 +601,8 @@ send_cookie_requests(Host, Ssl, Family, ValidationFun, Path,
                           {ok, {Response, _, _, _, _}}
                               = fusco:request(Client, Path, Method,
                                               [{<<"test">>, Header} | Headers],
-                                              Body, 10000), 
+                                              Body, 10000),
+                          timer:sleep(WaitTime),
                           Response
                   end, RequestTags),
     ok = fusco:disconnect(Client),

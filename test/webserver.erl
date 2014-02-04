@@ -119,7 +119,7 @@ get_addr(Host, Family) ->
     end.
 
 accept(ssl, ListenSocket) ->
-    case ssl:transport_accept(ListenSocket, 10000) of
+    case ssl:transport_accept(ListenSocket, 1000000) of
 	{ok, Socket} ->
 	    ok = ssl:ssl_accept(Socket),
 	    Socket;
@@ -127,7 +127,7 @@ accept(ssl, ListenSocket) ->
 	    error
     end;
 accept(Module, ListenSocket) ->
-    case Module:accept(ListenSocket, 1000) of
+    case Module:accept(ListenSocket, 100000) of
 	{ok, Socket} ->
 	    Socket;
 	{error, _} ->

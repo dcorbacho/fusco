@@ -13,13 +13,14 @@
 -export([parse_url/1,
          format_request/6,
          header_value/2,
-         update_cookies/3,
+         update_cookies/2,
+         delete_expired_cookies/2,
          to_lower/1,
-	 get_value/2,
-	 get_value/3,
-	 host_header/2,
-	 is_close/1,
-	 maybe_ipv6_enclose/1]).
+         get_value/2,
+         get_value/3,
+         host_header/2,
+         is_close/1,
+         maybe_ipv6_enclose/1]).
 
 -include("fusco_types.hrl").
 -include("fusco.hrl").
@@ -92,29 +93,26 @@ format_request(Path, Method, Hdrs, Host, Body, Cookies) ->
 %% @doc Updated the state of the cookies. after we receive a response.
 %% @end
 %%------------------------------------------------------------------------------
--spec update_cookies(headers(), [#fusco_cookie{}], erlang:timestamp()) -> [#fusco_cookie{}].
-update_cookies([], [], _) ->
+-spec update_cookies(headers(), [#fusco_cookie{}]) -> [#fusco_cookie{}].
+update_cookies([], []) ->
     [];
-update_cookies([], StateCookies, InTimestamp) ->
-    delete_expired_cookies(StateCookies, InTimestamp);
-update_cookies(ReceivedCookies, [], InTimestamp) ->
-    delete_expired_cookies(ReceivedCookies, InTimestamp);
-update_cookies(ReceivedCookies, StateCookies, InTimestamp) ->
+update_cookies([], StateCookies) ->
+    StateCookies;
+update_cookies(ReceivedCookies, []) ->
+    ReceivedCookies;
+update_cookies(ReceivedCookies, StateCookies) ->
     %% substitute the cookies with the same name, add the others, delete.
     %% RFC2109 - section 4.3.3
     %% If a user agent receives a Set-Cookie response header whose NAME is
     %% the same as a pre-existing cookie, and whose Domain and Path
     %% attribute values exactly (string) match those of a pre-existing
     %% cookie, the new cookie supersedes the old.
-    Substituted =
-        lists:foldl(fun(NewCookie, Acc) ->
-                            OldCookie =
-                                lists:keyfind(NewCookie#fusco_cookie.name,
-                                              #fusco_cookie.name, Acc),
-                            replace_or_add_cookie(OldCookie, NewCookie, Acc)
-                    end, StateCookies, ReceivedCookies),
-    %% Delete the cookies that are expired (check max-age and expire fields).
-    delete_expired_cookies(Substituted, InTimestamp).
+    lists:foldl(fun(NewCookie, Acc) ->
+                        OldCookie =
+                            lists:keyfind(NewCookie#fusco_cookie.name,
+                                          #fusco_cookie.name, Acc),
+                        replace_or_add_cookie(OldCookie, NewCookie, Acc)
+                end, StateCookies, ReceivedCookies).
 
 %% RFC2109 - section 4.3.3
 replace_or_add_cookie(false, NewCookie, List) ->
@@ -221,6 +219,8 @@ get_value(Key, List, Default) ->
 
 %%------------------------------------------------------------------------------
 %% @private
+%% @doc Delete the cookies that are expired (check max-age and expire fields).
+%% @end
 %%------------------------------------------------------------------------------
 -spec delete_expired_cookies([#fusco_cookie{}], erlang:timestamp()) -> [#fusco_cookie{}].
 delete_expired_cookies([], _InTimestamp) ->
@@ -228,7 +228,13 @@ delete_expired_cookies([], _InTimestamp) ->
 delete_expired_cookies(Cookies, InTimestamp) ->
     [ X || X <- Cookies, not expires(X, InTimestamp)].
 
-expires(#fusco_cookie{value = <<"deleted">>}, _) ->
+
+%% The Max-Age attribute defines the lifetime of the cookie,
+%% in seconds. The delta-seconds value is a decimal no-negative integer.
+%% After delta-seconds seconds elapse, the client
+%% should discard the cookie. A value of zero means the cookie
+%% should be discarded immediately.
+expires(#fusco_cookie{max_age = 0}, _) ->
     true;
 expires(#fusco_cookie{max_age = Max}, InTimestamp) when Max =/= undefined ->
     timer:now_diff(os:timestamp(), InTimestamp) > Max;
