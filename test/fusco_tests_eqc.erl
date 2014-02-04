@@ -406,41 +406,29 @@ validate_cookie_supersede(FirstResponse, SecondResponse, Supersede, FirstPair,
             end
     end.
 
-build_tokens(N, V, P) ->
-    [binary_to_list(<<N/binary,"=",V/binary>>),
-     binary_to_list(<<"Path=",P/binary>>)].
+build_cookie(N, V) ->
+    binary_to_list(<<N/binary,"=",V/binary>>).
 
-check_cookie_path(Headers, true, {_, {{N, V}, [{_, P}]}}) ->
-    [build_tokens(N, V, P)] == get_cookies_split_in_tokens(Headers);
+check_cookie_path(Headers, true, {_, {{N, V}, _}}) ->
+    build_cookie(N, V) == proplists:get_value("Cookie", Headers);
 check_cookie_path(Headers, false, _) ->
     undefined == proplists:get_value("Cookie", Headers).
 
 check_cookie_max_age(Headers, true, _) ->
     undefined == proplists:get_value("Cookie", Headers);
-check_cookie_max_age(Headers, false, {_, {{N, V}, [{_, P} | _]}}) ->
-    [build_tokens(N, V, P)] == get_cookies_split_in_tokens(Headers).    
-
-build_tokens(N, V, P, D) ->
-    build_tokens(N, V, P) ++ [binary_to_list(<<"Domain=",D/binary>>)].
-
-get_cookies_split_in_tokens(Headers) ->
-    %% Splits each cookie in subcomponents: Name=Value, Path=path, Domain=domain
-    lists:sort(
-      [string:tokens(C, "; ")
-       || C <- proplists:get_all_values("Cookie", Headers)]).
+check_cookie_max_age(Headers, false, {_, {{N, V}, _}}) ->
+    build_cookie(N, V) == proplists:get_value("Cookie", Headers).  
 
 %% http://tools.ietf.org/search/rfc6265#section-4.1.2
-check_cookie_supersede(Headers, true, {Name, _, Path, Domain}, {_, NewValue, _, _}) ->
-    [build_tokens(Name, NewValue, Path, Domain)]
-        == get_cookies_split_in_tokens(Headers);
-check_cookie_supersede(Headers, false, {Name, Value, Path, Domain},
-                       {NewName, NewValue, Path, NewDomain}) ->
-    lists:sort([build_tokens(Name, Value, Path, Domain),
-                build_tokens(NewName, NewValue, Path, NewDomain)])
-        == get_cookies_split_in_tokens(Headers);
-check_cookie_supersede(Headers, false, {Name, Value, Path, Domain}, _) ->
-    [build_tokens(Name, Value, Path, Domain)]
-        == get_cookies_split_in_tokens(Headers).
+check_cookie_supersede(Headers, true, {Name, _, _, _}, {_, NewValue, _, _}) ->
+    build_cookie(Name, NewValue) == proplists:get_value("Cookie", Headers);
+check_cookie_supersede(Headers, false, {Name, Value, Path, _},
+                       {NewName, NewValue, Path, _}) ->
+    lists:sort([build_cookie(Name, Value), build_cookie(NewName, NewValue)])
+        == lists:sort(string:tokens(proplists:get_value("Cookie", Headers), "; "));
+check_cookie_supersede(Headers, false, {Name, Value, _, _}, _) ->
+    build_cookie(Name, Value)
+        == proplists:get_value("Cookie", Headers).
 
 verify_host(GotHeaders, SentHeaders) ->
     %% Host must be added by the client if it is not part of the headers list

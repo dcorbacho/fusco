@@ -365,28 +365,25 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 %% @private
 %%------------------------------------------------------------------------------
 %% http://tools.ietf.org/search/rfc6265#section-4.2.1
-%% TODO Undo previous changes to rfc2109, that's the old one
 add_cookie_headers(Hdrs, Cookies) ->
-    [[[<<"Cookie: ">>, cookie_string(Cookie), ?HTTP_LINE_END] || Cookie <- Cookies]
+    [[<<"Cookie: ">>, make_cookie_string(Cookies, []), ?HTTP_LINE_END]
      | Hdrs].
 
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-cookie_string(#fusco_cookie{name = Name, value = Value, path = undefined,
-                            domain = undefined}) ->
-    [Name, <<"=">>, Value];
-cookie_string(#fusco_cookie{name = Name, value = Value, path = Path,
-                            domain = undefined}) ->
-    [Name, <<"=">>, Value, <<"; ">>, <<"Path=">>, Path];
-cookie_string(#fusco_cookie{name = Name, value = Value, path = undefined,
-                            domain = Domain}) ->
-    [Name, <<"=">>, Value, <<"; ">>, <<"Domain=">>, Domain];
-cookie_string(#fusco_cookie{name = Name, value = Value, path = Path,
-                            domain = Domain}) ->
-    [Name, <<"=">>, Value, <<"; ">>, <<"Path=">>, Path, <<"; ">>,
-     <<"Domain=">>, Domain].
+make_cookie_string([], Acc) ->
+    Acc;
+make_cookie_string([Cookie | Rest], []) ->
+    make_cookie_string(Rest, cookie_string(Cookie));
+make_cookie_string([Cookie | Rest], Acc) ->
+    make_cookie_string(Rest, [cookie_string(Cookie), "; " | Acc]).
 
+%%------------------------------------------------------------------------------
+%% @private
+%%------------------------------------------------------------------------------
+cookie_string(#fusco_cookie{name = Name, value = Value}) ->
+    [Name, <<"=">>, Value].
 
 %%------------------------------------------------------------------------------
 %% @private
