@@ -291,17 +291,12 @@ prop_http_request_cookie_path(Host, Family, Ssl) ->
        {valid_http_request(), cookie_path(), valid_http_response()},
        begin
            ResponseBin = build_response(Response, [Cookie]),
-           ValidationFun = validate_cookie_path_msg(ResponseBin, IsSubPath, Cookie),
-           [FirstResponse, SecondResponse] =
+           ValidationFun = validate_cookie(ResponseBin, fun check_cookie_path/3,
+                                           [IsSubPath, Cookie]),
+           Responses =
                send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request,
                                     [<<"first">>, <<"second">>], 0),
-           Expected = {Status, Reason},
-           ?WHENFAIL(io:format("FirstResponse: ~p~nExpected:"
-                               " ~p~nSecondResponse ~p~n",
-                               [FirstResponse, Expected, SecondResponse]),
-                     (FirstResponse == Expected)
-                     and (SecondResponse == {<<"200">>, <<"OK">>})
-                    )
+           check_responses(Status, Reason, Responses)
        end
       ).
 
@@ -332,18 +327,11 @@ prop_http_request_supersede_cookie(Host, Family, Ssl) ->
               %% First get cookie
               %% Second get second cookie
               %% Third checks received cookies
-              [FirstResponse, SecondResponse, ThirdResponse] =
+              Responses =
                   send_cookie_requests(Host, Ssl, Family, ValidationFun,
                                        encode_path(Path), Request,
                                        [<<"first">>, <<"second">>, <<"third">>], 0),
-              Expected = {Status, Reason},
-              ?WHENFAIL(io:format("FirstResponse: ~p~nSecondResponse:"
-                                  " ~p~nThirdResponse ~p~n",
-                               [FirstResponse, SecondResponse, ThirdResponse]),
-                        (FirstResponse == SecondResponse) and
-                        (FirstResponse == Expected)
-                        and (ThirdResponse == {<<"200">>, <<"OK">>})
-                       )
+              check_responses(Status, Reason, Responses)
           end
          )
       ).
@@ -359,27 +347,17 @@ prop_http_request_max_age(Host, Family, Ssl) ->
          {valid_http_request(), cookie_max_age(), valid_http_response()},
          begin
              ResponseBin = build_response(Response, [Cookie]),
-             ValidationFun = validate_cookie_max_age(ResponseBin, Expires, Cookie),
-             WaitTime = case Expires of
-                            true ->
-                                MaxAge*1000;
-                            false ->
-                                0
-                        end,
-             [FirstResponse, SecondResponse] =
-                 send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request,
-                                      [<<"first">>, <<"second">>], WaitTime),
-             Expected = {Status, Reason},
-             ?WHENFAIL(io:format("FirstResponse: ~p~nExpected:"
-                                 " ~p~nSecondResponse ~p~n",
-                                 [FirstResponse, Expected, SecondResponse]),
-                       (FirstResponse == Expected)
-                       and (SecondResponse == {<<"200">>, <<"OK">>})
-                      )
+             ValidationFun = validate_cookie(ResponseBin, fun check_cookie_max_age/3,
+                                             [Expires, Cookie]),
+             WaitTime = expiration_time(Expires, MaxAge),
+             Responses =
+                 send_cookie_requests(Host, Ssl, Family, ValidationFun, Path,
+                                      Request, [<<"first">>, <<"second">>],
+                                      WaitTime),
+             check_responses(Status, Reason, Responses)
          end
         )
      ).
-
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
@@ -395,35 +373,20 @@ validate_msg({{_Method, _Uri, _Version}, SentHeaders, SentBody}) ->
 	    Module:send(Socket, ?FOUR_BAD_REQUEST) 
     end.
 
-validate_cookie_path_msg(Response, IsSubPath, Cookie) ->
+validate_cookie(Response, Fun, Params) ->
     fun(Module, Socket, _Request, Headers, _Body) ->
             case proplists:get_value("Test", Headers) of
                 "first" ->
                     Module:send(Socket, Response);
                 "second" ->
-                    case check_cookie_path(Headers, IsSubPath, Cookie) of
+                    case erlang:apply(Fun, [Headers | Params]) of
                         true ->
                             Module:send(Socket, ?TWO_OK);
                         false ->
                             Module:send(Socket, ?FOUR_BAD_REQUEST)
                     end
             end
-    end.
-
-validate_cookie_max_age(Response, Expires, Cookie) ->
-    fun(Module, Socket, _Request, Headers, _Body) ->
-            case proplists:get_value("Test", Headers) of
-                "first" ->
-                    Module:send(Socket, Response);
-                "second" ->
-                    case check_cookie_max_age(Headers, Expires, Cookie) of
-                        true ->
-                            Module:send(Socket, ?TWO_OK);
-                        false ->
-                            Module:send(Socket, ?FOUR_BAD_REQUEST)
-                    end
-            end
-    end.
+    end.    
 
 validate_cookie_supersede(FirstResponse, SecondResponse, Supersede, FirstPair,
                           SecondPair) ->
@@ -608,3 +571,25 @@ send_cookie_requests(Host, Ssl, Family, ValidationFun, Path,
     ok = fusco:disconnect(Client),
     webserver:stop(Module, Listener, LS),
     Responses.
+
+expiration_time(Expires, MaxAge) ->
+    case Expires of
+        true ->
+            MaxAge*1000;
+        false ->
+            0
+    end.
+
+check_responses(Status, Reason, [First, Second]) ->
+    Expected = {Status, Reason},
+    ?WHENFAIL(io:format("First: ~p~nExpected: ~p~nSecond: ~p~n",
+                        [First, Expected, Second]),
+              {First, Second} == {Expected, {<<"200">>, <<"OK">>}}
+             );
+check_responses(Status, Reason, [First, Second, Third]) ->
+    Expected = {Status, Reason},
+    ?WHENFAIL(io:format("First: ~p~nSecond: ~p~nExpected: ~p~nThird ~p~n",
+                        [First, Second, Expected, Third]),
+              {First, Second, Third}
+              == {Expected, Expected, {<<"200">>, <<"OK">>}}
+             ).
