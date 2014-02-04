@@ -429,7 +429,7 @@ get_cookies_split_in_tokens(Headers) ->
       [string:tokens(C, "; ")
        || C <- proplists:get_all_values("Cookie", Headers)]).
 
-%% See http://www.ietf.org/rfc/rfc2109.txt section-4.3.4
+%% http://tools.ietf.org/search/rfc6265#section-4.1.2
 check_cookie_supersede(Headers, true, {Name, _, Path, Domain}, {_, NewValue, _, _}) ->
     [build_tokens(Name, NewValue, Path, Domain)]
         == get_cookies_split_in_tokens(Headers);

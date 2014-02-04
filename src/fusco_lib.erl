@@ -102,7 +102,8 @@ update_cookies(ReceivedCookies, []) ->
     ReceivedCookies;
 update_cookies(ReceivedCookies, StateCookies) ->
     %% substitute the cookies with the same name, add the others, delete.
-    %% RFC2109 - section 4.3.3
+
+    %% http://tools.ietf.org/search/rfc6265#section-4.1.2
     %% If a user agent receives a Set-Cookie response header whose NAME is
     %% the same as a pre-existing cookie, and whose Domain and Path
     %% attribute values exactly (string) match those of a pre-existing
@@ -114,7 +115,7 @@ update_cookies(ReceivedCookies, StateCookies) ->
                         replace_or_add_cookie(OldCookie, NewCookie, Acc)
                 end, StateCookies, ReceivedCookies).
 
-%% RFC2109 - section 4.3.3
+%% http://tools.ietf.org/search/rfc6265#section-4.1.2
 replace_or_add_cookie(false, NewCookie, List) ->
     %% Add new cookie
     [NewCookie | List];
@@ -213,10 +214,6 @@ get_value(Key, List, Default) ->
 	    Default
     end.
 
-%%==============================================================================
-%% Internal functions
-%%==============================================================================
-
 %%------------------------------------------------------------------------------
 %% @private
 %% @doc Delete the cookies that are expired (check max-age and expire fields).
@@ -228,12 +225,17 @@ delete_expired_cookies([], _InTimestamp) ->
 delete_expired_cookies(Cookies, InTimestamp) ->
     [ X || X <- Cookies, not expires(X, InTimestamp)].
 
-
-%% The Max-Age attribute defines the lifetime of the cookie,
-%% in seconds. The delta-seconds value is a decimal no-negative integer.
-%% After delta-seconds seconds elapse, the client
-%% should discard the cookie. A value of zero means the cookie
-%% should be discarded immediately.
+%%==============================================================================
+%% Internal functions
+%%==============================================================================
+%% http://tools.ietf.org/search/rfc6265#section-4.1.2.2
+%% The Max-Age attribute indicates the maximum lifetime of the cookie,
+%% represented as the number of seconds until the cookie expires.
+%%
+%% If a cookie has both the Max-Age and the Expires attribute,
+%% the Max-Age attribute has precedence and controls the expiration date of the
+%% cookie. If a cookie has neither the Max-Age nor the Expires attribute,
+%% the user agent will retain the cookie until "the current session is over"
 expires(#fusco_cookie{max_age = 0}, _) ->
     true;
 expires(#fusco_cookie{max_age = Max}, InTimestamp) when Max =/= undefined ->
@@ -342,8 +344,8 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
     Result = {ContentHdrs, ConHdr} =
 	add_headers(Hdrs, Body, Host, undefined, []),
 
+    %% http://tools.ietf.org/search/rfc6265#section-4.1.2.4
     %% only include cookies if the cookie path is a prefix of the request path
-    %% see RFC http://www.ietf.org/rfc/rfc2109.txt section 4.3.4
     %% TODO optimize cookie handling
     case lists:filter(
 	   fun(#fusco_cookie{path_tokens = undefined}) ->
@@ -362,7 +364,8 @@ add_mandatory_hdrs(Path, Hdrs, Host, Body, {true, Cookies}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-%% See syntax http://tools.ietf.org/html/rfc2109#section-4.3.4
+%% http://tools.ietf.org/search/rfc6265#section-4.2.1
+%% TODO Undo previous changes to rfc2109, that's the old one
 add_cookie_headers(Hdrs, Cookies) ->
     [[[<<"Cookie: ">>, cookie_string(Cookie), ?HTTP_LINE_END] || Cookie <- Cookies]
      | Hdrs].
