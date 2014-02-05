@@ -57,7 +57,7 @@ all_tests() ->
 
 independent_tests() ->
     [prop_http_request_cookie_path, prop_http_request_supersede_cookie,
-     prop_http_request_max_age].
+     prop_http_request_max_age, prop_http_request_expires].
 
 %%==============================================================================
 %% Test cases
@@ -85,6 +85,10 @@ prop_http_request_supersede_cookie(Config) ->
 
 prop_http_request_max_age(Config) ->
     do_prop(prop_http_request_max_age, Config).
+
+prop_http_request_expires(Config) ->
+    do_prop(prop_http_request_expires, Config).
+
 %%==============================================================================
 %% Internal functions
 %%==============================================================================

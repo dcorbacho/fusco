@@ -27,7 +27,8 @@
          prop_connection_refused_per_family/3,
          prop_http_request_cookie_path/3,
          prop_http_request_supersede_cookie/3,
-         prop_http_request_max_age/3]).
+         prop_http_request_max_age/3,
+         prop_http_request_expires/3]).
 
 %%==============================================================================
 %% Quickcheck generators
@@ -84,14 +85,28 @@ max_age() ->
                  {Expires, abs(MaxAge)}
          end).
 
+past() ->
+    ?SUCHTHAT(Date, http_eqc_gen:sane_cookie_date(), is_past(Date)).
+
+future() ->
+    ?SUCHTHAT(Date, http_eqc_gen:sane_cookie_date(), is_future(Date)).
+
+expires() ->
+    oneof([{true, past()}, {false, future()}]).
+
 set_cookie(Path) ->
     {<<"Set-Cookie">>, {http_eqc_gen:cookie_pair(),
                         [{<<"Path">>, encode_path(Path)}]}}.
 
-set_cookie(Path, MaxAge) ->
+set_cookie(Path, MaxAge) when is_integer(MaxAge) ->
     {<<"Set-Cookie">>, {http_eqc_gen:cookie_pair(),
                         [{<<"Path">>, encode_path(Path)},
-                         {<<"Max-Age">>, integer_to_binary(MaxAge)}]}}.
+                         {<<"Max-Age">>, integer_to_binary(MaxAge)}]}};
+set_cookie(Path, Expires) ->
+    {<<"Set-Cookie">>,
+     {http_eqc_gen:cookie_pair(),
+      [{<<"Path">>, encode_path(Path)},
+       {<<"Expires">>, Expires}]}}.
 
 set_cookie(Path, Domain, Name, Value) ->
     {<<"Set-Cookie">>, {{Name, Value}, [{<<"Path">>, encode_path(Path)},
@@ -113,6 +128,14 @@ cookie_max_age() ->
     ?LET({Path, {Expires, MaxAge}}, {path(), max_age()},
          ?LET(Cookie, set_cookie(Path, MaxAge),
               {Cookie, encode_path(Path), Expires, MaxAge}
+             )
+        ).
+
+cookie_expires() ->
+    %% Path is needed in the test setup to ensure cookie is not rejected
+    ?LET({Path, {Expires, Date}}, {path(), expires()},
+         ?LET(Cookie, set_cookie(Path, Date),
+              {Cookie, encode_path(Path), Expires}
              )
         ).
 
@@ -291,8 +314,8 @@ prop_http_request_cookie_path(Host, Family, Ssl) ->
        {valid_http_request(), cookie_path(), valid_http_response()},
        begin
            ResponseBin = build_response(Response, [Cookie]),
-           ValidationFun = validate_cookie(ResponseBin, fun check_cookie_path/3,
-                                           [IsSubPath, Cookie]),
+           ValidationFun = validate_cookie(ResponseBin, fun check_cookie_deleted/3,
+                                           [not IsSubPath, Cookie]),
            Responses =
                send_cookie_requests(Host, Ssl, Family, ValidationFun, Path, Request,
                                     [<<"first">>, <<"second">>], 0),
@@ -336,8 +359,6 @@ prop_http_request_supersede_cookie(Host, Family, Ssl) ->
          )
       ).
 
-%% Cookie rejected if the value for the Path attribute
-%% is not a prefix of the requested-URI
 prop_http_request_max_age(Host, Family, Ssl) ->
     eqc:numtests(
       25,
@@ -347,7 +368,7 @@ prop_http_request_max_age(Host, Family, Ssl) ->
          {valid_http_request(), cookie_max_age(), valid_http_response()},
          begin
              ResponseBin = build_response(Response, [Cookie]),
-             ValidationFun = validate_cookie(ResponseBin, fun check_cookie_max_age/3,
+             ValidationFun = validate_cookie(ResponseBin, fun check_cookie_deleted/3,
                                              [Expires, Cookie]),
              WaitTime = expiration_time(Expires, MaxAge),
              Responses =
@@ -358,6 +379,22 @@ prop_http_request_max_age(Host, Family, Ssl) ->
          end
         )
      ).
+
+prop_http_request_expires(Host, Family, Ssl) ->
+    ?FORALL(
+       {Request, {Cookie, Path, Expires},
+        {{_, Status, Reason}, _, _} = Response},
+       {valid_http_request(), cookie_expires(), valid_http_response()},
+       begin
+           ResponseBin = build_response(Response, [Cookie]),
+           ValidationFun = validate_cookie(ResponseBin, fun check_cookie_deleted/3,
+                                           [Expires, Cookie]),
+           Responses =
+               send_cookie_requests(Host, Ssl, Family, ValidationFun, Path,
+                                    Request, [<<"first">>, <<"second">>], 0),
+           check_responses(Status, Reason, Responses)
+       end
+      ).
 %%==============================================================================
 %% Internal functions
 %%==============================================================================
@@ -409,14 +446,9 @@ validate_cookie_supersede(FirstResponse, SecondResponse, Supersede, FirstPair,
 build_cookie(N, V) ->
     binary_to_list(<<N/binary,"=",V/binary>>).
 
-check_cookie_path(Headers, true, {_, {{N, V}, _}}) ->
-    build_cookie(N, V) == proplists:get_value("Cookie", Headers);
-check_cookie_path(Headers, false, _) ->
-    undefined == proplists:get_value("Cookie", Headers).
-
-check_cookie_max_age(Headers, true, _) ->
+check_cookie_deleted(Headers, true, _) ->
     undefined == proplists:get_value("Cookie", Headers);
-check_cookie_max_age(Headers, false, {_, {{N, V}, _}}) ->
+check_cookie_deleted(Headers, false, {_, {{N, V}, _}}) ->
     build_cookie(N, V) == proplists:get_value("Cookie", Headers).  
 
 %% http://tools.ietf.org/search/rfc6265#section-4.1.2
@@ -581,3 +613,50 @@ check_responses(Status, Reason, [First, Second, Third]) ->
               {First, Second, Third}
               == {Expected, Expected, {<<"200">>, <<"OK">>}}
              ).
+
+diff(A, A) ->
+    eq;
+diff(A, B) when A < B ->
+    lt;
+diff(_, _) ->
+    gt.
+
+is_past(DateTime) ->
+    {Date, {H, M, _}} = http_eqc_encoding:expires_datetime(DateTime),
+    case diff(Date, date()) of
+        lt ->
+            true;
+        gt ->
+            false;
+        eq ->
+            {HH, MM, _} = time(),
+            %% Set 30 min margin, safe side
+            case diff((HH*60+MM) - (H*60+M), 30) of
+                gt ->
+                    true;
+                eq ->
+                    true;
+                lt ->
+                    false
+            end
+    end.
+
+is_future(DateTime) ->
+    {Date, {H, M, _}} = http_eqc_encoding:expires_datetime(DateTime),
+    case diff(Date, date()) of
+        gt ->
+            true;
+        lt ->
+            false;
+        eq ->
+            {HH, MM, _} = time(),
+            %% Set 30 min margin, safe side
+            case diff((H*60+M) - (HH*60+MM), 30) of
+                gt ->
+                    true;
+                eq ->
+                    true;
+                lt ->
+                    false
+            end
+    end.

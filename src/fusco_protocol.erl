@@ -511,7 +511,21 @@ expires(<<"Sunday",$,,$\s,Rest/bits>>) ->
 expires(<<D1,D2,$\-,M1,M2,M3,$\-,Y1,Y2,Y3,Y4,$\s,Rest/bits>>) ->
     expires(Rest, {list_to_integer([Y1,Y2,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])});
 expires(<<D1,D2,$\-,M1,M2,M3,$\-,Y3,Y4,$\s,Rest/bits>>) ->
-    expires(Rest, {list_to_integer([$2,$0,Y3,Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])}).
+    %% http://tools.ietf.org/html/rfc2616#section-19.3
+    %% HTTP/1.1 clients and caches SHOULD assume that an RFC-850 date
+    %% which appears to be more than 50 years in the future is in fact
+    %% in the past (this helps solve the "year 2000" problem).
+    expires(Rest, {to_year([Y3, Y4]),month(<<M1,M2,M3>>),list_to_integer([D1,D2])}).
+
+to_year(List) ->
+    Int = list_to_integer(List),
+    {Y, _, _} = date(),
+    case (2000 + Int - Y) > 50 of
+        true ->
+            1900 + Int;
+        false ->
+            2000 + Int
+    end.
 
 expires(<<H1,H2,$:,M1,M2,$:,S1,S2,_Rest/bits>>, Date) ->
     {Date, {list_to_integer([H1,H2]), list_to_integer([M1,M2]), list_to_integer([S1,S2])}}.

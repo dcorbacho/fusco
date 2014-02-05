@@ -12,7 +12,9 @@
          body/1]).
 
 -export([build_valid_response/4,
-         build_cookie/1]).
+         build_cookie/1,
+         build_expires_date/1,
+         expires_datetime/1]).
 
 %%==============================================================================
 %% API
@@ -49,6 +51,31 @@ build_cookie({{K, V}, Avs}) ->
     CookiePair = [K, eq(), V],
     CookieAvs = build_cookie_avs(Avs),
     CookiePair ++ CookieAvs.
+
+build_expires_date({rfc1123date, {Wkday, Date1, Time}}) ->
+    Date = build_date(Date1),
+    BTime = build_time(Time),
+    [Wkday, $,, $\s, Date, $\s, BTime, $\s, "GMT"];
+build_expires_date({rfc850date, {Weekday, Date2, Time}}) ->
+    Date = build_date(Date2),
+    BTime = build_time(Time),
+    [Weekday, $,, $\s, Date, $\s, BTime, $\s, "GMT"];
+build_expires_date({asctimedate, {Wkday, Date3, Time, Year}}) ->
+    BTime = build_time(Time),
+    Date = build_date(Date3),
+    [Wkday, $\s, Date, $\s, BTime, $\s, Year].
+
+expires_datetime({rfc1123date, {_, {date1, {Day, Month, Year}}, {H, M, S}}}) ->
+    {{st_to_int(Year), month(Month), st_to_int(Day)},
+     {st_to_int(H), st_to_int(M), st_to_int(S)}};
+expires_datetime({rfc850date, {_, {date2, {Day, Month, Year}}, {H, M, S}}}) ->
+    {{to_year(Year), month(Month), st_to_int(Day)},
+     {st_to_int(H), st_to_int(M), st_to_int(S)}};
+expires_datetime({asctimedate, {_, {date3, {Day, Month}}, {H, M, S}, Year}}) ->
+    {{st_to_int(Year), month(Month), st_to_int(Day)},
+     {st_to_int(H), st_to_int(M), st_to_int(S)}};
+expires_datetime(undefined) ->
+    undefined.
 %%==============================================================================
 %% Internal functions
 %%==============================================================================    
@@ -67,20 +94,8 @@ build_body(List) ->
 build_cookie_avs(Avs) ->
     build_cookie_avs(Avs, []).
     
-build_cookie_avs([{<<"Expires">> = K, {rfc1123date, {Wkday, Date1, Time}}} | Rest], Acc) ->
-    Date = build_date(Date1),
-    BTime = build_time(Time),
-    V = [Wkday, $,, $\s, Date, $\s, BTime, $\s, "GMT"],
-    build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
-build_cookie_avs([{<<"Expires">> = K, {rfc850date, {Weekday, Date2, Time}}} | Rest], Acc) ->
-    Date = build_date(Date2),
-    BTime = build_time(Time),
-    V = [Weekday, $,, $\s, Date, $\s, BTime, $\s, "GMT"],
-    build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
-build_cookie_avs([{<<"Expires">> = K, {asctimedate, {Wkday, Date3, Time, Year}}} | Rest], Acc) ->
-    BTime = build_time(Time),
-    Date = build_date(Date3),
-    V = [Wkday, $\s, Date, $\s, BTime, $\s, Year],
+build_cookie_avs([{<<"Expires">> = K, Date} | Rest], Acc) ->
+    V = build_expires_date(Date),
     build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
 build_cookie_avs([{K, V} | Rest], Acc) ->
     build_cookie_avs(Rest, [[semicolon(), sp(), K, eq(), V] | Acc]);
@@ -113,3 +128,26 @@ crlf() ->
 
 eq() ->
     <<$=>>.
+
+months() ->
+    [{"Jan", 1}, {"Feb", 2}, {"Mar", 3}, {"Apr", 4},
+     {"May", 5}, {"Jun", 6}, {"Jul", 7}, {"Aug", 8},
+     {"Sep", 9}, {"Oct", 10}, {"Nov", 11}, {"Dec", 12}].
+
+st_to_int(L) ->
+    list_to_integer(L).
+
+month(Month) ->
+    proplists:get_value(Month, months()).
+
+to_year(Year) when length(Year) == 4 ->
+    st_to_int(Year);
+to_year(Year) ->
+    IntY = list_to_integer(Year),
+    {Y, _, _} = date(),
+    case (2000 + IntY - Y) > 50 of
+        true ->
+            1900 + IntY;
+        false ->
+            2000 + IntY
+    end.

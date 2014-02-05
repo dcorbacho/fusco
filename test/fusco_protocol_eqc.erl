@@ -124,7 +124,7 @@ output_cookies([{_SetCookie, {{K, V}, Avs}} | Rest], Acc) ->
                      undefined ->
                          undefined
                  end,
-    Expires = output_expires(proplists:get_value(<<"Expires">>, Avs)),
+    Expires = http_eqc_encoding:expires_datetime(proplists:get_value(<<"Expires">>, Avs)),
     Cookie = #fusco_cookie{name = K, value = V, max_age = MaxAge, path = Path,
                            path_tokens = PathTokens,
                            expires = Expires,
@@ -137,29 +137,6 @@ output_max_age(undefined) ->
     undefined;
 output_max_age(Age) ->
     list_to_integer(binary_to_list(Age)) * 1000000.
-
-output_expires({rfc1123date, {_, {date1, {Day, Month, Year}}, {H, M, S}}}) ->
-    {{st_to_int(Year), month(Month), st_to_int(Day)},
-     {st_to_int(H), st_to_int(M), st_to_int(S)}};
-output_expires({rfc850date, {_, {date2, {Day, Month, Year}}, {H, M, S}}}) ->
-    {{st_to_int(Year) + 2000, month(Month), st_to_int(Day)},
-     {st_to_int(H), st_to_int(M), st_to_int(S)}};
-output_expires({asctimedate, {_, {date3, {Day, Month}}, {H, M, S}, Year}}) ->
-    {{st_to_int(Year), month(Month), st_to_int(Day)},
-     {st_to_int(H), st_to_int(M), st_to_int(S)}};
-output_expires(undefined) ->
-    undefined.
-
-st_to_int(L) ->
-    list_to_integer(L).
-
-month(Month) ->
-    proplists:get_value(Month, months()).
-
-months() ->
-    [{"Jan", 1}, {"Feb", 2}, {"Mar", 3}, {"Apr", 4},
-     {"May", 5}, {"Jun", 6}, {"Jul", 7}, {"Aug", 8},
-     {"Sep", 9}, {"Oct", 10}, {"Nov", 11}, {"Dec", 12}].
 
 clear_record(Response) ->
     Response#response{socket = undefined,
