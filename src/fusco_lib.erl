@@ -485,6 +485,8 @@ char_to_lower($Y) -> $y;
 char_to_lower($Z) -> $z;
 char_to_lower(Ch) -> Ch.
 
+is_prefix([<<>>], _) ->
+    true;
 is_prefix([H | T1], [H | T2]) ->
     is_prefix(T1, T2);
 is_prefix([], _) ->

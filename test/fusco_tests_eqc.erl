@@ -57,16 +57,25 @@ token() ->
     non_empty(list(choose($A, $z))).
 
 path() ->
-    non_empty(list(token())).
+    ?LET({Path, Slash}, {non_empty(list(token())), slash()},
+         Path ++ Slash).
 
 domain() ->
     ?LET(Domain, path(), list_to_binary(string:join(Domain, "."))).
 
+slash() ->
+    oneof([["/"], []]).
+
 subpath(Path, true) ->
-    ?LET(Length, choose(1, length(Path)),
+    ?LET({Length, Slash}, {choose(1, length(Path)), slash()},
          begin
              {H, _} = lists:split(Length, Path),
-             H
+             case lists:last(H) of
+                 "/" ->
+                     H;
+                 _ ->
+                     H ++ Slash
+             end
          end);
 subpath(Path, false) ->
     ?SUCHTHAT(SubPath, path(), hd(SubPath) =/= hd(Path)).
@@ -563,7 +572,12 @@ select_module(Ssl) ->
     end.
 
 encode_path(Path) ->
-    list_to_binary(["/", string:join(Path, "/")]).
+    case lists:split(length(Path) - 1, Path) of
+        {P, ["/"]} ->
+            list_to_binary(["/", string:join(P, "/"), "/"]);
+        _ ->
+            list_to_binary(["/", string:join(Path, "/")])
+    end.
 
 build_response({StatusLine, Headers, Body}, Cookies) ->
     http_eqc_encoding:build_valid_response(
