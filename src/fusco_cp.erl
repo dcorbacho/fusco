@@ -92,6 +92,7 @@ init([Destination, Options, MaxClients]) ->
     process_flag(trap_exit, true),
     {ok, #state{destination = Destination,
                 options = Options,
+                total = 0,
                 max = MaxClients,
                 free = [],
                 busy = [],
