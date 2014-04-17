@@ -57,3 +57,10 @@
 		   in_timestamp,
 		   transfer_encoding,
 		   body}).
+
+-ifdef(no_binary_to_integer).
+
+-import(fusco_binary, [binary_to_integer/1,
+                       integer_to_binary/1]).
+
+-endif.

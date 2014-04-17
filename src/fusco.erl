@@ -89,30 +89,17 @@ disconnect(Client) ->
 request(Client, Path, Method, Hdrs, Body, Timeout) ->
     request(Client, Path, Method, Hdrs, Body, 1, Timeout).
 
+
 %%------------------------------------------------------------------------------
-%% @spec (Host, Port, Ssl, Path, Method, Hdrs, RequestBody, Timeout, Options) ->
-%%                                                                        Result
+%% @spec (Client, Host, Method, Hdrs, RequestBody, RetryCount, Timeout) -> Result
 %%   Host = string()
-%%   Port = integer()
-%%   Ssl = boolean()
-%%   Path = string()
 %%   Method = string() | atom()
 %%   Hdrs = [{Header, Value}]
 %%   Header = string() | binary() | atom()
 %%   Value = string() | binary()
 %%   RequestBody = iodata()
+%%   RetryCount = integer()
 %%   Timeout = integer() | infinity
-%%   Options = [Option]
-%%   Option = {connect_timeout, Milliseconds | infinity} |
-%%            {connect_options, [ConnectOptions]} |
-%%            {send_retry, integer()} |
-%%            {proxy, ProxyUrl} |
-%%            {proxy_ssl_options, SslOptions}
-%%   Milliseconds = integer()
-%%   WindowSize = integer()
-%%   ProxyUrl = string()
-%%   SslOptions = [any()]
-%%   PartSize = integer() | infinity
 %%   Result = {ok, {{StatusCode, ReasonPhrase}, Hdrs, ResponseBody}}
 %%          | {error, Reason}
 %%   StatusCode = integer()

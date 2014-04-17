@@ -69,7 +69,7 @@ parse_url(URL) ->
                 user = User, password = Passwd, is_ssl = (Scheme =:= https)}.
 
 %%------------------------------------------------------------------------------
-%% @spec (Path, Method, Headers, Host, Port, Body, Cookies) ->
+%% @spec (Path, Method, Headers, Host, Body, Cookies) ->
 %%    Request
 %% Path = iolist()
 %% Method = atom() | string()
