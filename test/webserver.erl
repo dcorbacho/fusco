@@ -1,6 +1,6 @@
 %%%-----------------------------------------------------------------------------
 %%% @copyright (C) 1999-2013, Erlang Solutions Ltd
-%%% @author Oscar Hellström <oscar@hellstrom.st>
+%%% @author Oscar HellstrÃ¶m <oscar@hellstrom.st>
 %%% @author Magnus Henoch <magnus@erlang-consulting.com>
 %%% @author Diana Parra Corbacho <diana.corbacho@erlang-solutions.com>
 %%% @doc Simple web server for testing purposes
