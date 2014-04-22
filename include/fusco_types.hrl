@@ -44,7 +44,7 @@
         {'connect_timeout', timeout()} |
         {'send_retry', non_neg_integer()} |
         {'connect_options', socket_options()} |
-	{'use_cookies', boolean()} |
+        {'use_cookies', boolean()} |
         {'proxy', string()} |
         {'proxy_ssl_options', socket_options()} |
         invalid_option().
