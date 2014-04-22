@@ -60,5 +60,6 @@
                         pid().        % When partial_download option is used.
 
 -type result() ::
-        {ok, {{pos_integer(), string()}, headers(), body()}} |
+        {ok, {pos_integer(), headers(), body(),
+              non_neg_integer(), pos_timeout()}} |
         {error, atom()}.
