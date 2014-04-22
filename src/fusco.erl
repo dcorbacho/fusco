@@ -29,6 +29,21 @@
 -include("fusco_types.hrl").
 -include("fusco.hrl").
 
+-export_type([header/0,
+              headers/0,
+              method/0,
+              pos_timeout/0,
+              socket/0,
+              port_num/0,
+              invalid_option/0,
+              destination/0,
+              option/0,
+              options/0,
+              host/0,
+              socket_options/0,
+              body/0,
+              result/0]).
+
 -define(HTTP_LINE_END, "\r\n").
 
 -record(client_state, {
