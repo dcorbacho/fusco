@@ -17,7 +17,7 @@
 %% Latency is here defined as the time from the start of packet transmission to the start of packet reception
 
 %% API
--export([recv/2,
+-export([recv/2, recv/3,
 	 decode_cookie/1]).
 
 %% TEST
@@ -27,7 +27,10 @@
 %% TODO handle partial downloads
 
 recv(Socket, Ssl) ->
-    case fusco_sock:recv(Socket, Ssl) of
+    recv(Socket, Ssl, infinity).
+
+recv(Socket, Ssl, Timeout) ->
+    case fusco_sock:recv(Socket, Ssl, Timeout) of
 	{ok, Data} ->
 	    decode_status_line(<< Data/binary >>,
 			       ?RECEPTION(Data, #response{socket = Socket, ssl = Ssl}));
