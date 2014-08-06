@@ -374,10 +374,10 @@ request_first_destination(#client_state{host = Host, port = Port, ssl = Ssl}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-read_proxy_connect_response(State) ->
+read_proxy_connect_response(#client_state{recv_timeout = RecvTimeout} = State) ->
     Socket = State#client_state.socket,
     ProxyIsSsl = (State#client_state.proxy)#fusco_url.is_ssl,
-    case fusco_protocol:recv(Socket, ProxyIsSsl) of
+    case fusco_protocol:recv(Socket, ProxyIsSsl, RecvTimeout) of
 	#response{status_code = <<$1,_,_>>} ->
             %% RFC 2616, section 10.1:
             %% A client MUST be prepared to accept one or more
