@@ -51,6 +51,7 @@
           port = 80 :: port_num(),
           ssl = false :: boolean(),
           socket,
+          %connect_timeout = 25000 :: timeout(), 
           connect_timeout = 'infinity' :: timeout(),
           connect_options = [] :: [any()],
           %% next fields are specific to particular requests
@@ -68,6 +69,7 @@
           out_timestamp,
           in_timestamp,
           on_connect,
+          %recv_timeout = 25000 :: timeout() 
           recv_timeout = 'infinity' :: timeout()
          }).
 
