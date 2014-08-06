@@ -406,7 +406,7 @@ read_proxy_connect_response(State) ->
 -spec read_response(#client_state{}) -> {any(), socket()} | no_return().
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
                             connection_header = ConHdr, cookies = Cookies,
-			    requester = From, out_timestamp = Out} = State) ->
+			    requester = From, out_timestamp = Out, attempts = Attempts} = State) ->
     case fusco_protocol:recv(Socket, Ssl) of
 	#response{status_code = <<$1,_,_>>} ->
 	    %% RFC 2616, section 10.1:
@@ -449,7 +449,7 @@ read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies
             % closing connections without sending responses.
             % If this the first attempt to send the request, we will try again.
             fusco_sock:close(Socket, Ssl),
-            send_request(State#client_state{socket = undefined});
+            send_request(State#client_state{socket = undefined, attempts = Attempts - 1});
 	{error, Reason} ->
 	    fusco_sock:close(Socket, Ssl),
 	    {reply, {error, Reason}, State#client_state{socket = undefined}}
