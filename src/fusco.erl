@@ -51,7 +51,6 @@
           port = 80 :: port_num(),
           ssl = false :: boolean(),
           socket,
-          %connect_timeout = 25000 :: timeout(), 
           connect_timeout = 'infinity' :: timeout(),
           connect_options = [] :: [any()],
           %% next fields are specific to particular requests
@@ -69,8 +68,7 @@
           out_timestamp,
           in_timestamp,
           on_connect,
-          %recv_timeout = 25000 :: timeout() 
-          recv_timeout = 'infinity' :: timeout()
+          recv_timeout = 'infinity' :: timeout() 
          }).
 
 %%==============================================================================
@@ -191,17 +189,7 @@ request(Client, Path, Method, Hdrs, Body, Timeout) ->
 %%------------------------------------------------------------------------------
 -spec request(pid(), string(), method(), headers(), iodata(), integer(), pos_timeout()) -> result().
 request(Client, Path, Method, Hdrs, Body, SendRetry, Timeout) when is_binary(Path) ->
-    try
-    case Timeout of
-        infinity ->
-            gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry, Timeout}, Timeout);
-        _ ->
-	       gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry, Timeout}, Timeout*SendRetry)
-    end
-    catch
-	exit:{timeout, _} ->
-	    {error, timeout}
-    end;
+    gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry, Timeout}, infinity);
 request(_, _, _, _, _, _, _) ->
     {error, badarg}.
 
@@ -268,7 +256,6 @@ handle_call({request, Path, Method, Hdrs, Body, SendRetry, Timeout}, From,
 		   request = Request,
 		   requester = From,
 		   connection_header = ConHeader,
-
 		   attempts = SendRetry + 1,
            recv_timeout = Timeout}).
 
@@ -351,9 +338,10 @@ send_request(#client_state{socket = undefined} = State) ->
             {reply, Error, NewState}
     end;
 send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
-                           attempts = Attempts} = State) ->
-    
+                           attempts = Attempts, recv_timeout = RecvTimeout} = State) ->
     Out = os:timestamp(),
+    %If we have a timeout set then we need to ensure a timeout on sending too
+    fusco_sock:setopts(Socket, [{send_timeout, RecvTimeout}, {send_timeout_close, true}], Ssl),
     case fusco_sock:send(Socket, Request, Ssl) of
         ok ->
 	        read_response(State#client_state{out_timestamp = Out});
