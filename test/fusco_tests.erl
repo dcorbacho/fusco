@@ -57,7 +57,8 @@ tcp_test_() ->
                 ?_test(pre_1_1_server_keep_alive()),
                 ?_test(post_100_continue()),
                 ?_test(request_timeout()),
-                ?_test(trailing_space_header())
+                ?_test(trailing_space_header()),
+                ?_test(closed_after_timeout())
             ]}
     }.
 
@@ -161,6 +162,26 @@ invalid_options() ->
         fusco:start(URL, [bad_option, {foo, bar}])),
     ?assertError({bad_option, {foo, bar}},
         fusco:start(URL, [{foo, bar}, bad_option])).
+
+closed_after_timeout() ->
+    {ok, _, _, Port} = webserver:start(gen_tcp, [fun webserver_utils:no_response/5, stay_open]),
+    URL = url(Port),
+    {ok, Client} = fusco:start(URL, []),
+    fusco:request(Client, <<"/slow">>, "GET", [], [], 50),
+    fusco:disconnect(Client),
+    wait_for_exit(10, Client),
+    ?assertEqual(false,erlang:is_process_alive(Client)).
+
+wait_for_exit(0, _) ->
+    ok;
+wait_for_exit(N, Proc) ->
+    timer:sleep(50),
+    case is_process_alive(Proc) of
+        false ->
+            ok;
+        true ->
+            wait_for_exit(N - 1, Proc)
+    end.
 
 url(Port) ->
     url(inet, Port).

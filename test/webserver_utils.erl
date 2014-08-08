@@ -83,3 +83,6 @@ trailing_space_header(Module, Socket, _, _, _) ->
           "Content-Length: 14 \r\n\r\n"
           ?DEFAULT_STRING
     ).
+
+no_response(_, _, _, _, _) ->
+    ok.
