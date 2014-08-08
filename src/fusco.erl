@@ -260,7 +260,7 @@ handle_call({request, Path, Method, Hdrs, Body, SendRetry}, From,
 		   request = Request,
 		   requester = From,
 		   connection_header = ConHeader,
-		   attempts = SendRetry}).
+		   attempts = SendRetry + 1}).
 
 %%--------------------------------------------------------------------
 %% @private

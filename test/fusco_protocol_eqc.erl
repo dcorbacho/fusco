@@ -138,10 +138,12 @@ output_max_age(undefined) ->
 output_max_age(Age) ->
     list_to_integer(binary_to_list(Age)) * 1000000.
 
-clear_record(Response) ->
+clear_record(Response) when is_record(Response, response) ->
     Response#response{socket = undefined,
 		      ssl = undefined,
-		      in_timestamp = undefined}.
+		      in_timestamp = undefined};
+clear_record(Error) ->
+    Error.
 
 clear_connection(Response) when is_record(Response, response) ->
     Response#response{connection = to_lower(Response#response.connection)};

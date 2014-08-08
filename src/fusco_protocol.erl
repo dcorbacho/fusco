@@ -41,7 +41,7 @@ decode_status_line(<<"HTTP/1.0\s",C1,C2,C3,$\s,Rest/bits>>, Response) ->
 decode_status_line(<<"HTTP/1.1\s",C1,C2,C3,$\s,Rest/bits>>, Response) ->
     decode_reason_phrase(Rest, <<>>, Response#response{version = {1,1},
 						       status_code = <<C1,C2,C3>>});
-decode_status_line(Bin, Response = #response{size = Size}) when Size < 10 ->
+decode_status_line(Bin, Response = #response{size = Size}) when Size < 13 ->
     case fusco_sock:recv(Response#response.socket, Response#response.ssl) of
 	{ok, Data} ->
 	    decode_status_line(<<Bin/binary, Data/binary>>, ?SIZE(Data, Response));
@@ -416,7 +416,9 @@ decode_cookie_av_value(<<C, Rest/bits>>, Co, AV, Value) ->
     decode_cookie_av_value(Rest, Co, AV, <<Value/binary, C>>).
 
 
-decode_body(<<>>, Response = #response{status_code = <<$1, _, _>>}) ->
+decode_body(<<>>, Response = #response{status_code = <<$1, _, _>>,
+                       transfer_encoding = TE})
+  when TE =/= <<"chunked">> ->
     return(<<>>, Response);
 decode_body(<<$\r, $\n, Rest/bits>>, Response) ->
     decode_body(Rest, Response);
