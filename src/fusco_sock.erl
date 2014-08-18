@@ -13,7 +13,8 @@
          recv/2,
 	 recv/3,
 	 send/3,
-         close/2]).
+         close/2,
+         setopts/3]).
 
 -include("fusco_types.hrl").
 
@@ -102,3 +103,21 @@ close(Socket, true) ->
     ssl:close(Socket);
 close(Socket, false) ->
     gen_tcp:close(Socket).
+
+%%------------------------------------------------------------------------------
+%% @spec (Socket, Opts, SslFlag) -> ok | {error, Reason}
+%%   Socket = socket()
+%%   Opts = list()
+%%   SslFlag = boolean()
+%%   Reason = atom()
+%% @doc
+%% Sets options for a socket.
+%% Will use the `ssl' module if `SslFlag' is set to `true', otherwise the
+%% inets module.
+%% @end
+%%------------------------------------------------------------------------------
+-spec setopts(socket(), list(), boolean()) -> ok | {error, atom()}.
+setopts(Socket, Opts, true) ->
+    ssl:setopts(Socket, Opts);
+setopts(Socket, Opts, false) ->
+    inet:setopts(Socket, Opts).

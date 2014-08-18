@@ -67,7 +67,8 @@
           host_header,
           out_timestamp,
           in_timestamp,
-          on_connect
+          on_connect,
+          recv_timeout = 'infinity' :: timeout() 
          }).
 
 %%==============================================================================
@@ -188,12 +189,7 @@ request(Client, Path, Method, Hdrs, Body, Timeout) ->
 %%------------------------------------------------------------------------------
 -spec request(pid(), string(), method(), headers(), iodata(), integer(), pos_timeout()) -> result().
 request(Client, Path, Method, Hdrs, Body, SendRetry, Timeout) when is_binary(Path) ->
-    try
-	gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry}, Timeout)
-    catch
-	exit:{timeout, _} ->
-	    {error, timeout}
-    end;
+    gen_server:call(Client, {request, Path, Method, Hdrs, Body, SendRetry, Timeout}, infinity);
 request(_, _, _, _, _, _, _) ->
     {error, badarg}.
 
@@ -250,7 +246,7 @@ handle_call(connect, _From, #client_state{socket = undefined} = State) ->
     end;
 handle_call(connect, _From, State) ->
     {reply, ok, State};
-handle_call({request, Path, Method, Hdrs, Body, SendRetry}, From,
+handle_call({request, Path, Method, Hdrs, Body, SendRetry, Timeout}, From,
             State = #client_state{host_header = Host,
                                   use_cookies = UseCookies}) ->
     Cookies = delete_expired_cookies(State),
@@ -260,7 +256,8 @@ handle_call({request, Path, Method, Hdrs, Body, SendRetry}, From,
 		   request = Request,
 		   requester = From,
 		   connection_header = ConHeader,
-		   attempts = SendRetry + 1}).
+		   attempts = SendRetry + 1,
+           recv_timeout = Timeout}).
 
 %%--------------------------------------------------------------------
 %% @private
@@ -341,11 +338,13 @@ send_request(#client_state{socket = undefined} = State) ->
             {reply, Error, NewState}
     end;
 send_request(#client_state{socket = Socket, ssl = Ssl, request = Request,
-                           attempts = Attempts} = State) ->
+                           attempts = Attempts, recv_timeout = RecvTimeout} = State) ->
     Out = os:timestamp(),
+    %If we have a timeout set then we need to ensure a timeout on sending too
+    fusco_sock:setopts(Socket, [{send_timeout, RecvTimeout}, {send_timeout_close, true}], Ssl),
     case fusco_sock:send(Socket, Request, Ssl) of
         ok ->
-	    read_response(State#client_state{out_timestamp = Out});
+	        read_response(State#client_state{out_timestamp = Out});
         {error, closed} ->
             fusco_sock:close(Socket, Ssl),
             send_request(State#client_state{socket = undefined, attempts = Attempts - 1});
@@ -365,10 +364,10 @@ request_first_destination(#client_state{host = Host, port = Port, ssl = Ssl}) ->
 %%------------------------------------------------------------------------------
 %% @private
 %%------------------------------------------------------------------------------
-read_proxy_connect_response(State) ->
+read_proxy_connect_response(#client_state{recv_timeout = RecvTimeout} = State) ->
     Socket = State#client_state.socket,
     ProxyIsSsl = (State#client_state.proxy)#fusco_url.is_ssl,
-    case fusco_protocol:recv(Socket, ProxyIsSsl) of
+    case fusco_protocol:recv(Socket, ProxyIsSsl, RecvTimeout) of
 	#response{status_code = <<$1,_,_>>} ->
             %% RFC 2616, section 10.1:
             %% A client MUST be prepared to accept one or more
@@ -406,8 +405,9 @@ read_proxy_connect_response(State) ->
 -spec read_response(#client_state{}) -> {any(), socket()} | no_return().
 read_response(#client_state{socket = Socket, ssl = Ssl, use_cookies = UseCookies,
                             connection_header = ConHdr, cookies = Cookies,
-			    requester = From, out_timestamp = Out, attempts = Attempts} = State) ->
-    case fusco_protocol:recv(Socket, Ssl) of
+			    requester = From, out_timestamp = Out, attempts = Attempts,
+                recv_timeout = RecvTimeout} = State) ->
+    case fusco_protocol:recv(Socket, Ssl, RecvTimeout) of
 	#response{status_code = <<$1,_,_>>} ->
 	    %% RFC 2616, section 10.1:
             %% A client MUST be prepared to accept one or more
